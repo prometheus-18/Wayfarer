@@ -1,0 +1,30 @@
+{
+  "schema": "qvac-hackathon/remote-apis@1",
+  "project": "Wayfarer",
+  "track": "Mobile",
+  "summary": "Wayfarer performs ZERO remote AI inference. All inference — translation (Bergamot NMT), OCR (ONNX), and the multimodal assistant (SmolVLM2) — runs entirely on-device through @qvac/sdk. The only network activity is the one-time download of model weights from the QVAC model registry; once cached, the app is fully offline (verifiable in airplane mode).",
+  "remoteAiCalls": [],
+  "remoteNonAiCalls": [
+    {
+      "name": "QVAC model registry (weight download)",
+      "provider": "Tether QVAC SDK (@qvac/sdk)",
+      "purpose": "Download model weights on first use of a feature; cached on the device permanently afterwards.",
+      "trigger": "First time a given model is loaded (per feature/language).",
+      "endpoints": [
+        "Resolved internally by @qvac/sdk from registry:// descriptors (Amazon S3 / Hugging Face CDN)"
+      ],
+      "dataSent": "None. Plain HTTP GET of public model files. No user text, photos, or telemetry are transmitted.",
+      "optional": true,
+      "offlineAfterDownload": true
+    }
+  ],
+  "thirdPartyServices": [
+    {
+      "name": "Expo Application Services (EAS Build)",
+      "purpose": "Optional cloud build to produce a shareable Android APK. Not used at runtime and performs no AI inference.",
+      "optional": true,
+      "runtime": false
+    }
+  ],
+  "notes": "The on-device inference audit log (model loads/unloads, TTFT, tokens/sec) can be exported from the in-app Privacy sheet for verification."
+}

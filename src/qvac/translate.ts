@@ -7,6 +7,8 @@
  */
 import { translate as qvacTranslate } from '@qvac/sdk';
 import { ensureTranslationModel, type ProgressListener } from './ModelManager';
+import { LIMITS, sanitizeText } from './security';
+import { logEvent } from './telemetry';
 
 export interface TranslateRequest {
   text: string;
@@ -37,7 +39,7 @@ export function routeFor(from: string, to: string): Hop[] {
 }
 
 export async function translateText(req: TranslateRequest): Promise<string> {
-  const text = req.text.trim();
+  const text = sanitizeText(req.text, LIMITS.translateChars);
   if (!text) return '';
 
   const hops = routeFor(req.from, req.to);
@@ -63,6 +65,17 @@ export async function translateText(req: TranslateRequest): Promise<string> {
       if (isFinalHop) req.onToken?.(accumulated);
     }
     current = accumulated.trim();
+
+    const stats = await result.stats;
+    logEvent({
+      kind: 'translate',
+      model: `nmt:${hop.from}-${hop.to}`,
+      prompt: text,
+      tokens: stats?.totalTokens,
+      ttftMs: stats?.timeToFirstToken,
+      tokensPerSec: stats?.tokensPerSecond,
+      totalMs: stats?.totalTime,
+    });
   }
 
   return current;

@@ -16,6 +16,7 @@ import { useModelLoader } from '../hooks/useModelLoader';
 import { colors, radius, spacing, typography } from '../theme';
 import { Button, Card, EmptyState, ModelLoadingOverlay, Pill, SectionLabel } from '../components/ui';
 import { LanguageChip, LanguagePicker } from '../components/LanguagePicker';
+import { PrivacyFooter } from '../components/PrivacyFooter';
 
 const ACCENT = colors.scan;
 
@@ -175,7 +176,7 @@ export function ScanScreen() {
           </>
         ) : null}
 
-        <Text style={styles.privacyNote}>🔒 Photos never leave your device</Text>
+        <PrivacyFooter accent={ACCENT} />
       </ScrollView>
 
       <LanguagePicker

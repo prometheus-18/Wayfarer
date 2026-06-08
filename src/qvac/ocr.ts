@@ -5,6 +5,7 @@
 import { ocr as qvacOcr, type OCRTextBlock } from '@qvac/sdk';
 import { ensureOcrModel, type ProgressListener } from './ModelManager';
 import { toModelPath } from './image';
+import { logEvent } from './telemetry';
 
 export interface OcrResult {
   /** Raw recognized blocks, in reading order. */
@@ -19,7 +20,7 @@ export async function scanImage(
 ): Promise<OcrResult> {
   const modelId = await ensureOcrModel(onProgress);
 
-  const { blocks } = qvacOcr({
+  const { blocks, stats } = qvacOcr({
     modelId,
     image: toModelPath(imageUri),
     options: { paragraph: true },
@@ -31,6 +32,20 @@ export async function scanImage(
     .filter(Boolean)
     .join('\n')
     .trim();
+
+  const ocrStats = await stats;
+  logEvent({
+    kind: 'ocr',
+    model: 'ocr:latin',
+    tokens: recognized.length,
+    totalMs: ocrStats?.totalTime,
+    extra: {
+      blocks: recognized.length,
+      chars: text.length,
+      detectionMs: ocrStats?.detectionTime,
+      recognitionMs: ocrStats?.recognitionTime,
+    },
+  });
 
   return { blocks: recognized, text };
 }

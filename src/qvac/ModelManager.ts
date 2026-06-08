@@ -11,6 +11,7 @@
  */
 import { loadModel, unloadModel, type ModelProgressUpdate } from '@qvac/sdk';
 import { bergamotDescriptor, OCR_MODELS, ASSISTANT_MODELS } from './models';
+import { logEvent } from './telemetry';
 
 export type ProgressListener = (progress: ModelProgressUpdate) => void;
 
@@ -38,6 +39,7 @@ async function unloadOtherHeavyModels(keepKey: string): Promise<void> {
         // Best-effort: even if unload fails we drop our reference.
       }
       loaded.delete(key);
+      logEvent({ kind: 'model_unload', model: key });
     }
   }
 }
@@ -62,8 +64,10 @@ async function ensure(
     if (HEAVY_GROUPS.includes(group)) {
       await unloadOtherHeavyModels(key);
     }
+    const startedAt = Date.now();
     const modelId = await load((p) => onProgress?.(p));
     loaded.set(key, { modelId, group });
+    logEvent({ kind: 'model_load', model: key, totalMs: Date.now() - startedAt });
     return modelId;
   })();
 
@@ -141,5 +145,6 @@ export async function unloadAll(): Promise<void> {
       // ignore
     }
     loaded.delete(key);
+    logEvent({ kind: 'model_unload', model: key });
   }
 }

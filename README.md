@@ -95,6 +95,29 @@ For iOS, swap step 3 for `npx expo run:ios --device`.
 | Scan | Latin recognizer + CRAFT detector | ~98 MB |
 | Assistant | SmolVLM2-500M + vision projection | ~900 MB |
 
+### Share it with a non-developer (APK)
+
+To hand the app to someone who just wants to *use* it (a judge, a friend), build an installable Android APK:
+
+```bash
+# Cloud build (easiest; needs a free Expo account) — produces a downloadable APK
+npx eas-cli build -p android --profile preview
+
+# …or build locally without any cloud:
+npx expo prebuild --clean
+cd android && ./gradlew assembleRelease   # APK at android/app/build/outputs/apk/release/
+```
+
+Send them the APK; they enable "install unknown apps", tap it, and open **Wayfarer** — no dev tools needed. First run downloads the models over Wi-Fi, then it's offline forever.
+
+---
+
+## 🔒 Privacy & security
+
+Everything runs on-device — no text, photo, or conversation ever leaves the phone. On top of that we add input sanitization and **prompt-injection resistance** (the assistant treats text inside scanned images as data to translate, never as commands). Tap the **"100% offline"** footer in-app to read the privacy summary and export the on-device inference log. Full threat model: [`SECURITY.md`](SECURITY.md). Remote-call disclosure: [`remote-apis.json`](remote-apis.json).
+
+> 🏆 Hackathon judges: see [`SUBMISSION.md`](SUBMISSION.md) for the QVAC API mapping, reproducibility, and artifact checklist.
+
 ---
 
 ## 📁 Project structure
@@ -140,4 +163,4 @@ Contributions follow a branch → PR flow — see [`CONTRIBUTING.md`](CONTRIBUTI
 
 ## 📄 License
 
-See [`LICENSE`](LICENSE).
+**Apache-2.0** — see [`LICENSE`](LICENSE). (Open source, as required by the hackathon.)

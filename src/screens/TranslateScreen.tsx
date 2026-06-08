@@ -16,6 +16,7 @@ import { useModelLoader } from '../hooks/useModelLoader';
 import { colors, radius, spacing, typography } from '../theme';
 import { Button, Card, ModelLoadingOverlay, SectionLabel } from '../components/ui';
 import { LanguageChip, LanguagePicker } from '../components/LanguagePicker';
+import { PrivacyFooter } from '../components/PrivacyFooter';
 
 const ACCENT = colors.translate;
 
@@ -125,7 +126,7 @@ export function TranslateScreen() {
             )}
           </Card>
 
-          <Text style={styles.privacyNote}>🔒 100% offline · nothing leaves your phone</Text>
+          <PrivacyFooter accent={ACCENT} />
         </ScrollView>
       </KeyboardAvoidingView>
 
