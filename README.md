@@ -133,7 +133,7 @@ wayfarer/
 
 ## 👥 Team
 
-- **[@prometheus-18](https://github.com/prometheus-18)** — Anant
+- **[@prometheus-18](https://github.com/prometheus-18)** — Rahul
 - **[@KartikeyCode](https://github.com/KartikeyCode)** — Kartikey
 
 Contributions follow a branch → PR flow — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
