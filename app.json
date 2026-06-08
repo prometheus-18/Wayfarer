@@ -1,25 +1,46 @@
 {
   "expo": {
-    "name": "wayfarer",
+    "name": "Wayfarer",
     "slug": "wayfarer",
+    "description": "Offline, private travel translator & vision assistant powered by on-device QVAC AI.",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "wayfarer",
     "userInterfaceStyle": "light",
+    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "io.wayfarer.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Wayfarer uses the camera to scan signs, menus and documents so it can read and translate them entirely on your device.",
+        "NSPhotoLibraryUsageDescription": "Wayfarer reads photos you choose so it can extract and translate text entirely on your device."
+      }
     },
     "android": {
+      "package": "io.wayfarer.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "permissions": ["CAMERA"],
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      ["expo-build-properties", { "android": { "minSdkVersion": 29 } }],
+      "@qvac/sdk/expo-plugin",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Wayfarer reads photos you choose so it can extract and translate text entirely on your device.",
+          "cameraPermission": "Wayfarer uses the camera to scan signs, menus and documents so it can read and translate them entirely on your device."
+        }
+      ]
+    ]
   }
 }
