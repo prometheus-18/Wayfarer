@@ -9,13 +9,13 @@
  *    never hold two large models in memory at once.
  *  - Concurrent requests for the same model share a single in-flight promise.
  */
-import { loadModel, unloadModel, type ModelProgressUpdate } from '@qvac/sdk';
-import { bergamotDescriptor, OCR_MODELS, ASSISTANT_MODELS } from './models';
+import { loadModel, unloadModel, type LoadModelOptions, type ModelProgressUpdate } from '@qvac/sdk';
+import { bergamotDescriptor, OCR_MODELS, ASSISTANT_MODELS, TRANSCRIBE_MODEL } from './models';
 import { logEvent } from './telemetry';
 
 export type ProgressListener = (progress: ModelProgressUpdate) => void;
 
-type Group = 'translate' | 'ocr' | 'assistant';
+type Group = 'translate' | 'ocr' | 'assistant' | 'transcribe';
 const HEAVY_GROUPS: Group[] = ['ocr', 'assistant'];
 
 interface LoadedModel {
@@ -89,7 +89,32 @@ export function ensureTranslationModel(
   return ensure(
     `nmt:${from}-${to}`,
     'translate',
-    (op) => loadModel({ modelSrc: descriptor, onProgress: op }),
+    (op) =>
+      loadModel({
+        modelSrc: descriptor,
+        // Bergamot NMT models are direction-specific: the SDK requires the
+        // engine + language pair in modelConfig (the descriptor alone carries
+        // only `addon: "nmt"`, not the direction), and a literal modelType.
+        modelType: 'nmtcpp-translation',
+        modelConfig: { engine: 'Bergamot', from, to },
+        onProgress: op,
+      } as unknown as LoadModelOptions),
+    onProgress,
+  );
+}
+
+/** Load (or reuse) the multilingual Whisper model for voice → text. */
+export function ensureTranscribeModel(onProgress?: ProgressListener): Promise<string> {
+  return ensure(
+    'whisper:base',
+    'transcribe',
+    (op) =>
+      loadModel({
+        modelSrc: TRANSCRIBE_MODEL,
+        modelType: 'whispercpp-transcription',
+        modelConfig: {},
+        onProgress: op,
+      } as unknown as LoadModelOptions),
     onProgress,
   );
 }
@@ -134,6 +159,7 @@ export const ModelStatus = {
   isTranslationLoaded: (from: string, to: string) => isLoaded(`nmt:${from}-${to}`),
   isOcrLoaded: () => isLoaded('ocr:latin'),
   isAssistantLoaded: () => isLoaded('vlm:smolvlm2-500m'),
+  isTranscribeLoaded: () => isLoaded('whisper:base'),
 };
 
 /** Free everything (e.g. on a hard reset). */

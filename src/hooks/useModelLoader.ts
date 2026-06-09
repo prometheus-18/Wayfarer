@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { ModelProgressUpdate } from '@qvac/sdk';
 import { formatBytes } from '../qvac/models';
 
@@ -20,24 +20,47 @@ const IDLE: ModelLoadState = { active: false, percentage: 0 };
  */
 export function useModelLoader() {
   const [state, setState] = useState<ModelLoadState>(IDLE);
+  // Highest percentage seen this session — keeps the bar monotonic so it never
+  // jumps backwards when the SDK moves on to the next file in a multi-file model.
+  const peak = useRef(0);
 
   const begin = useCallback(() => {
+    peak.current = 0;
     setState({ active: true, percentage: 0 });
   }, []);
 
   const end = useCallback(() => {
+    peak.current = 0;
     setState(IDLE);
   }, []);
 
   const onProgress = useCallback((progress: ModelProgressUpdate) => {
+    // Prefer the SDK's cumulative figures. `progress.percentage`/`downloaded`
+    // are per-file and reset to 0 for each file in a multi-file model, which
+    // makes a naive bar bounce around. The file set / shard carry the overall
+    // numbers we actually want to show.
+    const fileSet = progress.fileSetInfo;
+    let percentage: number;
     let detail: string | undefined;
-    if (progress.fileSetInfo) {
-      const { fileIndex, totalFiles } = progress.fileSetInfo;
-      detail = `file ${fileIndex + 1}/${totalFiles}`;
-    } else if (progress.total > 0) {
-      detail = `${formatBytes(progress.downloaded)} / ${formatBytes(progress.total)}`;
+
+    if (fileSet && fileSet.overallTotal > 0) {
+      percentage = (fileSet.overallDownloaded / fileSet.overallTotal) * 100;
+      detail =
+        `${formatBytes(fileSet.overallDownloaded)} / ${formatBytes(fileSet.overallTotal)}` +
+        ` · file ${fileSet.fileIndex + 1}/${fileSet.totalFiles}`;
+    } else if (progress.shardInfo) {
+      percentage = progress.shardInfo.overallPercentage;
+      detail = progress.total > 0 ? `${formatBytes(progress.downloaded)} / ${formatBytes(progress.total)}` : undefined;
+    } else {
+      percentage = progress.percentage ?? 0;
+      if (progress.total > 0) {
+        detail = `${formatBytes(progress.downloaded)} / ${formatBytes(progress.total)}`;
+      }
     }
-    setState({ active: true, percentage: progress.percentage ?? 0, detail });
+
+    // Clamp 0–100 and never go backwards.
+    peak.current = Math.min(100, Math.max(peak.current, percentage));
+    setState({ active: true, percentage: peak.current, detail });
   }, []);
 
   return { state, begin, end, onProgress };

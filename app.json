@@ -25,14 +25,24 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      ["expo-build-properties", { "android": { "minSdkVersion": 29 } }],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ],
       "@qvac/sdk/expo-plugin",
       [
         "expo-image-picker",
@@ -40,7 +50,18 @@
           "photosPermission": "Wayfarer reads photos you choose so it can extract and translate text entirely on your device.",
           "cameraPermission": "Wayfarer uses the camera to scan signs, menus and documents so it can read and translate them entirely on your device."
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Wayfarer uses the microphone to record speech and transcribe it to text entirely on your device."
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "091fd5ee-ef76-4d77-bb8e-e2e0f642596f"
+      }
+    }
   }
 }

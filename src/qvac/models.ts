@@ -13,6 +13,7 @@ import {
   OCR_CRAFT_DETECTOR,
   SMOLVLM2_500M_MULTIMODAL_Q8_0,
   MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0,
+  WHISPER_BASE_Q8_0,
 } from '@qvac/sdk';
 
 /** The shape of a QVAC model descriptor constant (e.g. `BERGAMOT_EN_ES`). */
@@ -41,7 +42,12 @@ export const SIZES = {
   ocr: 98 * 1024 * 1024,
   /** SmolVLM2-500M + its F16 projection. */
   assistant: 900 * 1024 * 1024,
+  /** Whisper base (multilingual) speech-to-text. */
+  transcribe: 82 * 1024 * 1024,
 } as const;
+
+/** Multilingual Whisper model used for voice → text on the Translate screen. */
+export const TRANSCRIBE_MODEL = WHISPER_BASE_Q8_0;
 
 export const OCR_MODELS = {
   recognizer: OCR_LATIN_RECOGNIZER_1,
