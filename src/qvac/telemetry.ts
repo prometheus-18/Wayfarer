@@ -15,7 +15,8 @@ export type InferenceKind =
   | 'model_unload'
   | 'translate'
   | 'ocr'
-  | 'assistant';
+  | 'assistant'
+  | 'benchmark';
 
 export interface InferenceLogEntry {
   /** ISO timestamp. */
@@ -55,6 +56,20 @@ function preview(text: string | undefined, max = 60): string | undefined {
   if (!text) return undefined;
   const clean = text.replace(/\s+/g, ' ').trim();
   return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+}
+
+/**
+ * Resolve the SDK's stats promise without ever blocking or hanging the
+ * caller: settles with `undefined` after `ms` (or on error) so audit-log
+ * rows are still written with wall-clock fallbacks if the SDK never
+ * delivers stats. Telemetry must stay off the request path.
+ */
+export function raceStats<T>(stats: Promise<T> | undefined, ms = 3000): Promise<T | undefined> {
+  if (!stats) return Promise.resolve(undefined);
+  return Promise.race([
+    stats.catch(() => undefined),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms)),
+  ]);
 }
 
 export function logEvent(entry: Omit<InferenceLogEntry, 'ts'> & { prompt?: string }): void {

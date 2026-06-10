@@ -45,3 +45,8 @@ yarn-error.*
 
 # built APKs / release artifacts (too large for git; rebuild locally)
 /dist-apk
+
+# local debug captures (logcats, screenshots)
+/_*.txt
+/_*.png
+

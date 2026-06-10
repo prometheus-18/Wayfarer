@@ -3,6 +3,7 @@ import { Alert, Modal, Share, StyleSheet, Text, TouchableOpacity, View } from 'r
 import { colors, radius, shadow, spacing, typography } from '../theme';
 import { clear, getEntries, toJSON } from '../qvac/telemetry';
 import { Button } from './ui';
+import { BenchmarkSheet } from './BenchmarkSheet';
 
 /**
  * Tappable "100% offline" footer that opens a Privacy & transparency sheet.
@@ -11,6 +12,7 @@ import { Button } from './ui';
  */
 export function PrivacyFooter({ accent = colors.primary }: { accent?: string }) {
   const [open, setOpen] = useState(false);
+  const [benchOpen, setBenchOpen] = useState(false);
 
   return (
     <>
@@ -53,6 +55,17 @@ export function PrivacyFooter({ accent = colors.primary }: { accent?: string }) 
                 }
               }}
             />
+            <Button
+              label="Run on-device benchmark"
+              icon="🧪"
+              variant="tonal"
+              accent={accent}
+              onPress={() => {
+                setOpen(false);
+                setBenchOpen(true);
+              }}
+              style={styles.benchButton}
+            />
             <View style={styles.row}>
               <Button
                 label="Clear log"
@@ -72,6 +85,8 @@ export function PrivacyFooter({ accent = colors.primary }: { accent?: string }) 
           </View>
         </View>
       </Modal>
+
+      <BenchmarkSheet visible={benchOpen} onClose={() => setBenchOpen(false)} accent={accent} />
     </>
   );
 }
@@ -121,5 +136,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   row: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
+  benchButton: { marginTop: spacing.md },
   flex: { flex: 1 },
 });

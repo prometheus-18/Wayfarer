@@ -6,9 +6,11 @@ import { TabBar, type TabKey } from './src/components/TabBar';
 import { TranslateScreen } from './src/screens/TranslateScreen';
 import { ScanScreen } from './src/screens/ScanScreen';
 import { AssistantScreen } from './src/screens/AssistantScreen';
+import { useAutoBenchmark } from './src/dev/autobench';
 
 export default function App() {
   const [active, setActive] = useState<TabKey>('translate');
+  useAutoBenchmark();
 
   return (
     <SafeAreaView style={styles.safe}>

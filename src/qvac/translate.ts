@@ -8,7 +8,7 @@
 import { translate as qvacTranslate } from '@qvac/sdk';
 import { ensureTranslationModel, type ProgressListener } from './ModelManager';
 import { LIMITS, sanitizeText } from './security';
-import { logEvent } from './telemetry';
+import { logEvent, raceStats } from './telemetry';
 
 export interface TranslateRequest {
   text: string;
@@ -52,6 +52,7 @@ export async function translateText(req: TranslateRequest): Promise<string> {
 
     const modelId = await ensureTranslationModel(hop.from, hop.to, req.onProgress);
 
+    const hopStartedAt = Date.now();
     const result = qvacTranslate({
       modelId,
       text: current,
@@ -66,15 +67,18 @@ export async function translateText(req: TranslateRequest): Promise<string> {
     }
     current = accumulated.trim();
 
-    const stats = await result.stats;
-    logEvent({
-      kind: 'translate',
-      model: `nmt:${hop.from}-${hop.to}`,
-      prompt: text,
-      tokens: stats?.totalTokens,
-      ttftMs: stats?.timeToFirstToken,
-      tokensPerSec: stats?.tokensPerSecond,
-      totalMs: stats?.totalTime,
+    // Telemetry must never block the result: stats settle off the critical
+    // path with a wall-clock fallback so every hop still gets a log row.
+    void raceStats(result.stats).then((stats) => {
+      logEvent({
+        kind: 'translate',
+        model: `nmt:${hop.from}-${hop.to}`,
+        prompt: text,
+        tokens: stats?.totalTokens,
+        ttftMs: stats?.timeToFirstToken,
+        tokensPerSec: stats?.tokensPerSecond,
+        totalMs: stats?.totalTime ?? Date.now() - hopStartedAt,
+      });
     });
   }
 
