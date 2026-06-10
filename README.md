@@ -50,7 +50,7 @@
 - **`src/components/` + `src/theme.ts`** — a small design system (cards, buttons, language picker, loading overlay, tab bar).
 - Models download from the QVAC registry **on first use** and are cached on the device forever after — the loading overlay shows progress.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a deeper tour.
+See [`docs/APP_GUIDE.md`](docs/APP_GUIDE.md) for what each feature does and how, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a deeper code tour.
 
 ---
 

@@ -12,7 +12,7 @@ import { useEffect } from 'react';
 import { runStressSuite, type CaseStatus, type StressGroup } from '../qvac/stress';
 
 export const AUTOBENCH: { enabled: boolean; groups: StressGroup[] } = {
-  enabled: true,
+  enabled: false,
   groups: ['ocr', 'assistant', 'probe'],
 };
 
