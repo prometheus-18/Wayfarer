@@ -11,8 +11,12 @@
 | | Feature | What it does | QVAC under the hood |
 |---|---|---|---|
 | 🗣️ | **Translate** | Offline neural translation across 16+ languages, streamed token-by-token. Non-English ↔ non-English pivots through English automatically. | `translate()` + Bergamot NMT models (`BERGAMOT_*`) |
-| 📷 | **Scan** | Snap or pick a photo → on-device OCR extracts the text → translate it into your language. | `ocr()` + `OCR_LATIN_RECOGNIZER_1` & `OCR_CRAFT_DETECTOR` |
-| 🧭 | **Assistant** | A warm, offline travel assistant. Ask anything, or attach a photo and let it reason about the scene + translate any text it sees. | `completion()` + `SMOLVLM2_500M` multimodal VLM |
+| 🎙️ | **Voice in** | Tap **Speak**, talk in any supported language — Whisper transcribes it on-device straight into the translator. | `transcribe()` + `WHISPER_BASE_Q8_0` |
+| 🔊 | **Voice out** | Tap **Listen** and the phone speaks the translation aloud — full voice-to-voice translation (en/es/de/it). | `textToSpeech()` + Supertonic TTS |
+| 📷 | **Scan** | Snap or pick a photo → on-device OCR extracts the text → translate it into your language (or have it spoken). | `ocr()` + `OCR_LATIN_RECOGNIZER_1` & `OCR_CRAFT_DETECTOR` |
+| 🧭 | **Agent** | A warm, offline travel assistant that **orchestrates tools** — it routes your question to translation, photo scanning, or the offline phrasebook, shows its tool trace, then answers. | `completion()` with grammar-constrained `responseFormat` + `SMOLVLM2_500M` multimodal VLM |
+| 📖 | **Phrasebook (RAG)** | 92 curated travel phrases + city guides, semantically searchable offline; grounds the agent's answers. | `ragIngest()` / `ragSearch()` + `EMBEDDINGGEMMA_300M` |
+| 🧪 | **Benchmark** | A 20-case stress suite *inside the app* (privacy footer) — live TTFT/tokens-per-sec HUD on every screen, exportable audit log. | `stats` from every modality |
 
 **Why it matters:** no signal abroad, no roaming fees, no data leaving your phone, no privacy trade-offs. Everything happens locally.
 
@@ -146,10 +150,12 @@ wayfarer/
 
 ## 🗺️ Roadmap
 
+- [x] Voice input/output (QVAC `transcribe()` + `textToSpeech()`) — **shipped**
+- [x] Phrasebook with offline semantic search (QVAC embeddings + RAG) — **shipped**
+- [x] Tool-calling agent orchestrating translate/scan/phrasebook — **shipped**
 - [ ] Live camera OCR overlay (translate in real time through the viewfinder)
-- [ ] Voice input/output (QVAC `transcribe()` + `textToSpeech()`)
-- [ ] Phrasebook / offline favorites + history
 - [ ] P2P "delegate to my laptop" for the heavy VLM (QVAC delegated inference)
+- [ ] MedPsy traveler-health advisor mode
 - [ ] More OCR scripts (Devanagari, CJK, Cyrillic, Arabic recognizers)
 
 ---

@@ -27,8 +27,28 @@ Mobile RAM is the key constraint, so the manager:
 | Helper | SDK call | Model constants |
 |---|---|---|
 | `translateText()` | `loadModel()` → `translate({ modelType: "nmtcpp-translation" })` | `BERGAMOT_<FROM>_<TO>` |
-| `scanImage()` | `loadModel({ modelConfig: { detectorModelSrc } })` → `ocr()` | `OCR_LATIN_RECOGNIZER_1`, `OCR_CRAFT_DETECTOR` |
+| `transcribeAudio()` | `loadModel({ modelType: "whispercpp-transcription" })` → `transcribe()` | `WHISPER_BASE_Q8_0` |
+| `speak()` | `loadModel({ modelType: "tts-ggml", modelConfig: { ttsEngine: "supertonic", language } })` → `textToSpeech()` → WAV → expo-audio | `TTS_EN_SUPERTONIC_Q4_0`, `TTS_MULTILINGUAL_SUPERTONIC2_Q4_0` |
+| `scanImage()` | `loadModel({ modelType: "onnx-ocr", modelConfig: { detectorModelSrc } })` → `ocr()` | `OCR_LATIN_RECOGNIZER_1`, `OCR_CRAFT_DETECTOR` |
 | `askAssistant()` | `loadModel({ modelConfig: { projectionModelSrc } })` → `completion()` | `SMOLVLM2_500M_MULTIMODAL_Q8_0`, `MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0` |
+| `runAgent()` | `completion({ responseFormat: { type: "json_schema" } })` route → dispatch tools → `completion()` compose | same VLM (router + composer) |
+| `searchPhrases()` | `loadModel({ modelType: "llamacpp-embedding" })` → `ragIngest()` / `ragSearch()` | `EMBEDDINGGEMMA_300M_Q4_0` |
+
+### Request serialization
+
+The Bare worker **replaces an in-flight job when a new request arrives for the
+same engine** ("Stale job replaced by new run"). `src/qvac/queue.ts#enqueue`
+gives each engine a FIFO chain; every service helper routes its inference
+through it. Keep using the same queue key per engine (`translate`, `ocr`,
+`assistant`, `transcribe`, `tts`, `embed`).
+
+### Stress suite
+
+`src/qvac/stress.ts` is a 20-case on-device benchmark (translation routing,
+max-length, burst/concurrency, sanitization, OCR sample sign, assistant,
+injection probe, model thrash, TTS, RAG, capability probes). Run it from the
+privacy footer → "Run on-device benchmark", or from the dev box by flipping
+`src/dev/autobench.ts` (results stream to Metro logs with a `[BENCH]` prefix).
 
 ### Translation routing
 

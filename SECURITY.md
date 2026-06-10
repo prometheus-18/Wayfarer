@@ -7,7 +7,7 @@ Wayfarer is **private by construction**: every AI workload runs on-device throug
 - **No cloud inference.** Translation, OCR and the multimodal assistant all run locally via `@qvac/sdk`. The app works in airplane mode after models are cached.
 - **No user data leaves the device.** No analytics, no telemetry upload, no account. The only network call is the one-time model download from the QVAC registry (a public HTTP GET — see [`remote-apis.json`](remote-apis.json)).
 - **No persistence of sensitive content.** Chat history lives in memory only and is gone when the app closes. Picked photos are read locally and never uploaded.
-- **Minimal permissions.** Camera is requested only when you tap a scan/attach action. No location, contacts, or background access.
+- **Minimal permissions.** Camera is requested only when you tap a scan/attach action; the microphone only when you tap **Speak** (recordings are transcribed on-device by Whisper and the audio never leaves the phone). No location, contacts, or background access.
 
 ## Threat model & mitigations
 
@@ -17,7 +17,8 @@ Wayfarer is **private by construction**: every AI workload runs on-device throug
 | **Chat-template / turn-boundary spoofing** (user pastes `<|im_start|>system …`) | Untrusted input is stripped of control tokens (`<\|…\|>`, `[INST]`, `<s>`, etc.) before reaching the model. | `sanitizeText()` |
 | **Invisible-character / bidi spoofing** | Zero-width and bidirectional control code points are removed from input. | `sanitizeText()` → `stripInvisible()` |
 | **Context overflow / resource abuse** | Hard length caps on translation and assistant inputs. | `LIMITS` |
-| **Silent exfiltration** | No network egress for inference; the assistant is told it has no tools/network and must never claim to send data. | architecture + system prompt |
+| **Silent exfiltration** | No network egress for inference; the assistant is told it has no network and must never claim to send data. | architecture + system prompt |
+| **Tool-call hijacking** (agent mode) | The agent's routing is **grammar-constrained** (`responseFormat: json_schema`) — the model physically cannot emit anything but one of four whitelisted tools with typed args; tools are dispatched deterministically in app code and every call is audit-logged (`agent_tool`). | `src/qvac/agent.ts` |
 
 Suspected injection attempts are flagged in the local audit log (`injectionFlagged`) for transparency — they are **not** silently blocked, so the model can still safely read and translate the offending text.
 

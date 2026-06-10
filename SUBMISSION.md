@@ -22,18 +22,23 @@
 
 ## 3. How Wayfarer uses the QVAC SDK
 
-**100% of AI inference is QVAC, on-device.** No other AI provider is used. Three QVAC modalities are wired:
+**100% of AI inference is QVAC, on-device.** No other AI provider is used. **Seven QVAC modalities** are wired:
 
 | Feature | QVAC API | Model(s) | Notes |
 |---|---|---|---|
 | **Translate** | `loadModel()` → `translate({ modelType: "nmtcpp-translation" })` (streaming) | `BERGAMOT_<A>_<B>` (Bergamot NMT) | 16+ languages; non-English↔non-English pivots through English (two NMT hops). |
-| **Scan** | `loadModel({ modelConfig: { detectorModelSrc } })` → `ocr()` | `OCR_LATIN_RECOGNIZER_1` + `OCR_CRAFT_DETECTOR` (ONNX Runtime) | Returns text blocks with bounding boxes + confidence; output feeds Translate. |
-| **Assistant** | `loadModel({ modelConfig: { projectionModelSrc } })` → `completion()` (multimodal, streaming) | `SMOLVLM2_500M_MULTIMODAL_Q8_0` + `MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0` | Text + image-in chat; reads/translates text in photos. |
+| **Voice input (STT)** | `loadModel({ modelType: "whispercpp-transcription" })` → `transcribe()` | `WHISPER_BASE_Q8_0` (multilingual) | Mic → on-device Whisper → text, feeds Translate. |
+| **Voice output (TTS)** | `loadModel({ modelType: "tts-ggml" })` → `textToSpeech()` | `TTS_EN_SUPERTONIC_Q4_0` / `TTS_MULTILINGUAL_SUPERTONIC2_Q4_0` | Int16 PCM → WAV → played via expo-audio. **Voice-to-voice translation** (en/es/de/it out). |
+| **Scan (OCR)** | `loadModel({ modelType: "onnx-ocr", modelConfig: { detectorModelSrc } })` → `ocr()` | `OCR_LATIN_RECOGNIZER_1` + `OCR_CRAFT_DETECTOR` (ONNX Runtime) | Returns text blocks with bounding boxes + confidence; output feeds Translate/TTS. |
+| **Assistant (VLM)** | `loadModel({ modelConfig: { projectionModelSrc } })` → `completion()` (multimodal, streaming) | `SMOLVLM2_500M_MULTIMODAL_Q8_0` + projection | Text + image-in chat; reads/translates text in photos. |
+| **Agent (tool calling)** | `completion({ responseFormat: { type: "json_schema" } })` — grammar-constrained routing | same VLM | The assistant **orchestrates tools** (translate / scan / phrasebook) with a visible trace; every tool call is audit-logged. |
+| **RAG (embeddings)** | `loadModel({ modelType: "llamacpp-embedding" })` → `ragIngest()` / `ragSearch()` | `EMBEDDINGGEMMA_300M_Q4_0` | 92-document offline travel phrasebook + city guides, semantically searchable; grounds the agent's answers. |
 
 Supporting QVAC usage:
-- **Model lifecycle:** `unloadModel()` with a custom `ModelManager` that keeps only one heavy model resident at a time (RAM-safe on phones).
+- **Model lifecycle:** `unloadModel()` with a custom `ModelManager` that keeps only one heavy model resident at a time (RAM-safe on phones); per-engine request queue (the worker replaces in-flight same-engine jobs).
 - **Streaming:** `translate().tokenStream` and `completion().events` (`contentDelta`) drive token-by-token UI.
-- **Performance stats:** `translate().stats`, `ocr().stats`, and `completion` `completionStats` events feed the auditable log.
+- **Performance stats:** `translate().stats`, `ocr().stats`, and `completion` `completionStats` events feed the auditable log **and a live perf HUD (TTFT / tokens-per-sec) on every screen** — the on-camera numbers match the exported log.
+- **On-device benchmark:** a 20-case stress suite ships *in the app* (privacy footer → "Run on-device benchmark"): translation routing, 5,000-char inputs, burst + concurrency, sanitization, OCR on a bundled sample sign, assistant chat, **prompt-injection probe**, heavy-model thrash, TTS, RAG. Judges can reproduce our numbers with one tap.
 
 All SDK calls live in [`src/qvac/`](src/qvac/). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
