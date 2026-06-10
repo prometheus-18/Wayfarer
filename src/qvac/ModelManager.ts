@@ -53,6 +53,25 @@ async function unloadOtherHeavyModels(keepKey: string): Promise<void> {
 }
 
 /**
+ * Evict every model except `keepKey`. Used before loading the assistant VLM:
+ * its tensor allocation aborts the whole process on low memory (observed
+ * SIGABRT in llama.cpp's create_backend_buffers on the 8 GB demo phone), so
+ * it must load into the emptiest worker we can give it.
+ */
+async function unloadEverythingExcept(keepKey: string): Promise<void> {
+  for (const [key, model] of [...loaded.entries()]) {
+    if (key === keepKey) continue;
+    try {
+      await unloadModel({ modelId: model.modelId });
+    } catch {
+      // Best-effort: even if unload fails we drop our reference.
+    }
+    loaded.delete(key);
+    logEvent({ kind: 'model_unload', model: key, extra: { reason: 'free_ram_for_assistant' } });
+  }
+}
+
+/**
  * Core loader: returns a cached modelId if present, otherwise loads it once
  * (deduping concurrent callers) and caches the result.
  */
@@ -69,7 +88,9 @@ async function ensure(
   if (pending) return pending;
 
   const task = (async () => {
-    if (HEAVY_GROUPS.includes(group)) {
+    if (group === 'assistant') {
+      await unloadEverythingExcept(key);
+    } else if (HEAVY_GROUPS.includes(group)) {
       await unloadOtherHeavyModels(key);
     }
     const startedAt = Date.now();
@@ -169,7 +190,14 @@ export function ensureAssistantModel(onProgress?: ProgressListener): Promise<str
         modelSrc: ASSISTANT_MODELS.vlm,
         modelType: 'llamacpp-completion',
         modelConfig: {
-          ctx_size: 4096,
+          // 2048 halves the KV-cache footprint vs 4096 (history is capped at
+          // 10 turns in assistant.ts, so 2048 is comfortable).
+          ctx_size: 2048,
+          // The SDK defaults to device:"gpu"/gpu_layers:99; allocating the
+          // ~550 MB VLM on this phone's Mali GPU returns a null buffer and
+          // the process SIGSEGVs in create_backend_buffers. CPU is reliable.
+          device: 'cpu',
+          gpu_layers: 0,
           projectionModelSrc: ASSISTANT_MODELS.projection,
         },
         onProgress: op,
@@ -208,7 +236,9 @@ export function ensureEmbeddingModel(onProgress?: ProgressListener): Promise<str
       loadModel({
         modelSrc: EMBEDDING_MODEL,
         modelType: 'llamacpp-embedding',
-        modelConfig: {},
+        // CPU for the same reason as the assistant: GPU buffer allocation
+        // for llama-family models is unreliable on this device class.
+        modelConfig: { device: 'cpu', gpu_layers: 0 },
         onProgress: op,
       } as unknown as LoadModelOptions),
     onProgress,

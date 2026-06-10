@@ -55,6 +55,8 @@ export interface StressReport {
 
 export interface StressOptions {
   groups: StressGroup[];
+  /** Optional case-id whitelist (dev tooling: run a single case). */
+  only?: string[];
   /** Called with a fresh snapshot whenever any case changes state. */
   onUpdate: (results: CaseResult[]) => void;
   /** Model download progress (forwarded to the loading UI). */
@@ -354,7 +356,7 @@ const CASES: CaseDef[] = [
         loadModel({
           modelSrc: QWEN3_600M_INST_Q4,
           modelType: 'llamacpp-completion',
-          modelConfig: { ctx_size: 2048 },
+          modelConfig: { ctx_size: 2048, device: 'cpu', gpu_layers: 0 },
           onProgress: ctx.onProgress,
         } as unknown as LoadModelOptions),
       );
@@ -443,8 +445,15 @@ export async function runStressSuite(options: StressOptions): Promise<StressRepo
   const startedAt = new Date().toISOString();
   const suiteStart = Date.now();
   const context: CaseContext = { groups: options.groups, onProgress: options.onProgress };
-  const active = CASES.filter((c) => options.groups.includes(c.group));
-  const results: CaseResult[] = listCases(options.groups);
+  const active = CASES.filter(
+    (c) => options.groups.includes(c.group) && (!options.only || options.only.includes(c.id)),
+  );
+  const results: CaseResult[] = active.map((c) => ({
+    id: c.id,
+    title: c.title,
+    group: c.group,
+    status: 'pending' as CaseStatus,
+  }));
   const publish = () => options.onUpdate(results.map((r) => ({ ...r })));
 
   logEvent({ kind: 'benchmark', model: 'suite', extra: { phase: 'start', cases: active.length } });

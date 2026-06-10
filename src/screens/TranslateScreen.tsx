@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -44,6 +44,8 @@ export function TranslateScreen() {
 
   const { state: loadState, begin, end, onProgress } = useModelLoader();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recordingRef = useRef(false);
+  const autoStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fail = (title: string, error: unknown) => {
     const detail = String((error as Error)?.message ?? error);
@@ -61,11 +63,21 @@ export function TranslateScreen() {
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
+    recordingRef.current = true;
     setRecording(true);
+    // Cap clip length: Whisper on a phone runs near real-time, so a very
+    // long recording means an equally long transcription wait.
+    if (autoStopTimer.current) clearTimeout(autoStopTimer.current);
+    autoStopTimer.current = setTimeout(() => stopRecording(), 30_000);
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!recordingRef.current) return;
+    recordingRef.current = false;
+    if (autoStopTimer.current) {
+      clearTimeout(autoStopTimer.current);
+      autoStopTimer.current = null;
+    }
     setRecording(false);
     setTranscribing(true);
     begin();

@@ -11,9 +11,10 @@
 import { useEffect } from 'react';
 import { runStressSuite, type CaseStatus, type StressGroup } from '../qvac/stress';
 
-export const AUTOBENCH: { enabled: boolean; groups: StressGroup[] } = {
+export const AUTOBENCH: { enabled: boolean; groups: StressGroup[]; only?: string[] } = {
   enabled: false,
-  groups: ['ocr', 'assistant', 'probe'],
+  groups: ['assistant'],
+  only: ['a-chat'],
 };
 
 export function useAutoBenchmark(): void {
@@ -25,6 +26,7 @@ export function useAutoBenchmark(): void {
       try {
         const report = await runStressSuite({
           groups: AUTOBENCH.groups,
+          only: AUTOBENCH.only,
           onUpdate: (results) => {
             for (const r of results) {
               if (seen.get(r.id) === r.status) continue;
