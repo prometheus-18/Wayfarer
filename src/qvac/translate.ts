@@ -7,6 +7,7 @@
  */
 import { translate as qvacTranslate } from '@qvac/sdk';
 import { ensureTranslationModel, type ProgressListener } from './ModelManager';
+import { enqueue } from './queue';
 import { LIMITS, sanitizeText } from './security';
 import { logEvent, raceStats } from './telemetry';
 
@@ -53,32 +54,37 @@ export async function translateText(req: TranslateRequest): Promise<string> {
     const modelId = await ensureTranslationModel(hop.from, hop.to, req.onProgress);
 
     const hopStartedAt = Date.now();
-    const result = qvacTranslate({
-      modelId,
-      text: current,
-      stream: true,
-      modelType: 'nmtcpp-translation',
-    });
-
-    let accumulated = '';
-    for await (const token of result.tokenStream) {
-      accumulated += token;
-      if (isFinalHop) req.onToken?.(accumulated);
-    }
-    current = accumulated.trim();
-
-    // Telemetry must never block the result: stats settle off the critical
-    // path with a wall-clock fallback so every hop still gets a log row.
-    void raceStats(result.stats).then((stats) => {
-      logEvent({
-        kind: 'translate',
-        model: `nmt:${hop.from}-${hop.to}`,
-        prompt: text,
-        tokens: stats?.totalTokens,
-        ttftMs: stats?.timeToFirstToken,
-        tokensPerSec: stats?.tokensPerSecond,
-        totalMs: stats?.totalTime ?? Date.now() - hopStartedAt,
+    // The NMT engine replaces an in-flight job when a new one arrives, so
+    // hops from concurrent callers are serialized through a FIFO queue.
+    current = await enqueue('translate', async () => {
+      const result = qvacTranslate({
+        modelId,
+        text: current,
+        stream: true,
+        modelType: 'nmtcpp-translation',
       });
+
+      let accumulated = '';
+      for await (const token of result.tokenStream) {
+        accumulated += token;
+        if (isFinalHop) req.onToken?.(accumulated);
+      }
+
+      // Telemetry must never block the result: stats settle off the critical
+      // path with a wall-clock fallback so every hop still gets a log row.
+      void raceStats(result.stats).then((stats) => {
+        logEvent({
+          kind: 'translate',
+          model: `nmt:${hop.from}-${hop.to}`,
+          prompt: text,
+          tokens: stats?.totalTokens,
+          ttftMs: stats?.timeToFirstToken,
+          tokensPerSec: stats?.tokensPerSecond,
+          totalMs: stats?.totalTime ?? Date.now() - hopStartedAt,
+        });
+      });
+
+      return accumulated.trim();
     });
   }
 

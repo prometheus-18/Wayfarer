@@ -13,14 +13,24 @@
  */
 import { Asset } from 'expo-asset';
 import * as Device from 'expo-device';
+import {
+  loadModel,
+  unloadModel,
+  EMBEDDINGGEMMA_300M_Q4_0,
+  QWEN3_600M_INST_Q4,
+  type LoadModelOptions,
+} from '@qvac/sdk';
 import { translateText } from './translate';
 import { scanImage } from './ocr';
 import { askAssistant } from './assistant';
+import { runAgent } from './agent';
+import { searchPhrases } from './rag';
+import { speak } from './tts';
 import { LIMITS } from './security';
 import { logEvent } from './telemetry';
 import type { ProgressListener } from './ModelManager';
 
-export type StressGroup = 'translate' | 'ocr' | 'assistant';
+export type StressGroup = 'translate' | 'ocr' | 'assistant' | 'probe';
 export type CaseStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip';
 
 export interface CaseResult {
@@ -77,6 +87,16 @@ async function sampleSignUri(): Promise<string> {
 
 function expect(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
+}
+
+/** Cap a step so one stalled download/load fails its case instead of freezing the suite. */
+function within<T>(ms: number, label: string, task: Promise<T>): Promise<T> {
+  return Promise.race([
+    task,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms),
+    ),
+  ]);
 }
 
 const LONG_SENTENCE =
@@ -302,6 +322,91 @@ const CASES: CaseDef[] = [
         onProgress: ctx.onProgress,
       });
       expect(/ravi/i.test(second), `lost conversation context, got: "${second.slice(0, 60)}"`);
+    },
+  },
+  {
+    id: 'p-embed',
+    title: 'Capability probe: embeddings addon (EmbeddingGemma)',
+    group: 'probe',
+    run: async (ctx) => {
+      const modelId = await within(
+        300_000,
+        'embedding model load',
+        loadModel({
+          modelSrc: EMBEDDINGGEMMA_300M_Q4_0,
+          modelType: 'llamacpp-embedding',
+          modelConfig: {},
+          onProgress: ctx.onProgress,
+        } as unknown as LoadModelOptions),
+      );
+      await unloadModel({ modelId });
+      return 'llamacpp-embedding addon loads';
+    },
+  },
+  {
+    id: 'p-qwen',
+    title: 'Capability probe: Qwen3-600M instruct (tool-calling base)',
+    group: 'probe',
+    run: async (ctx) => {
+      const modelId = await within(
+        300_000,
+        'qwen3 model load',
+        loadModel({
+          modelSrc: QWEN3_600M_INST_Q4,
+          modelType: 'llamacpp-completion',
+          modelConfig: { ctx_size: 2048 },
+          onProgress: ctx.onProgress,
+        } as unknown as LoadModelOptions),
+      );
+      await unloadModel({ modelId });
+      return 'qwen3-600m loads';
+    },
+  },
+  {
+    id: 'f-tts',
+    title: 'Feature: speak a translation aloud (Supertonic)',
+    group: 'probe',
+    run: async (ctx) => {
+      const startedAt = Date.now();
+      await within(300_000, 'tts speak', speak('Welcome to Wayfarer. Your translation is ready.', 'en', ctx.onProgress));
+      return `synthesized + played in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+    },
+  },
+  {
+    id: 'f-rag',
+    title: 'Feature: RAG phrasebook search (EmbeddingGemma)',
+    group: 'probe',
+    run: async (ctx) => {
+      const hits = await within(
+        420_000,
+        'phrasebook search',
+        searchPhrases('I am allergic to peanuts', 4, ctx.onProgress),
+      );
+      expect(hits.length > 0, 'no phrasebook hits');
+      expect(
+        hits.some((hit) => /peanut|allerg/i.test(hit.text)),
+        `irrelevant top hits: "${hits[0]?.text.slice(0, 60)}"`,
+      );
+      return `top hit (${hits[0].score.toFixed(2)}): "${hits[0].text.slice(0, 50)}"`;
+    },
+  },
+  {
+    id: 'f-agent',
+    title: 'Feature: agent routes + answers a phrase question',
+    group: 'assistant',
+    run: async (ctx) => {
+      const { reply, trace } = await within(
+        420_000,
+        'agent run',
+        runAgent({
+          prompt: 'How do I politely ask where the bathroom is in Spanish?',
+          history: [],
+          onProgress: ctx.onProgress,
+        }),
+      );
+      expect(reply.trim().length > 0, 'empty agent reply');
+      expect(trace.length > 0, 'agent produced no trace');
+      return `${trace.map((step) => step.tool).join(' → ')}: "${reply.slice(0, 50)}"`;
     },
   },
   {

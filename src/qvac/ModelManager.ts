@@ -10,12 +10,20 @@
  *  - Concurrent requests for the same model share a single in-flight promise.
  */
 import { loadModel, unloadModel, type LoadModelOptions, type ModelProgressUpdate } from '@qvac/sdk';
-import { bergamotDescriptor, OCR_MODELS, ASSISTANT_MODELS, TRANSCRIBE_MODEL } from './models';
+import {
+  bergamotDescriptor,
+  OCR_MODELS,
+  ASSISTANT_MODELS,
+  TRANSCRIBE_MODEL,
+  TTS_MODELS,
+  EMBEDDING_MODEL,
+} from './models';
+import type { TtsLanguage } from './tts';
 import { logEvent } from './telemetry';
 
 export type ProgressListener = (progress: ModelProgressUpdate) => void;
 
-type Group = 'translate' | 'ocr' | 'assistant' | 'transcribe';
+type Group = 'translate' | 'ocr' | 'assistant' | 'transcribe' | 'tts' | 'embed';
 const HEAVY_GROUPS: Group[] = ['ocr', 'assistant'];
 
 interface LoadedModel {
@@ -65,10 +73,21 @@ async function ensure(
       await unloadOtherHeavyModels(key);
     }
     const startedAt = Date.now();
-    const modelId = await load((p) => onProgress?.(p));
-    loaded.set(key, { modelId, group });
-    logEvent({ kind: 'model_load', model: key, totalMs: Date.now() - startedAt });
-    return modelId;
+    try {
+      const modelId = await load((p) => onProgress?.(p));
+      loaded.set(key, { modelId, group });
+      logEvent({ kind: 'model_load', model: key, totalMs: Date.now() - startedAt, extra: { group } });
+      return modelId;
+    } catch (error) {
+      // A failed load must leave an audit trail (and not poison the cache).
+      logEvent({
+        kind: 'error',
+        model: key,
+        totalMs: Date.now() - startedAt,
+        extra: { phase: 'model_load', message: String((error as Error)?.message ?? error) },
+      });
+      throw error;
+    }
   })();
 
   inflight.set(key, task);
@@ -127,12 +146,15 @@ export function ensureOcrModel(onProgress?: ProgressListener): Promise<string> {
     (op) =>
       loadModel({
         modelSrc: OCR_MODELS.recognizer,
+        // Explicit for parity with the SDK's own OCR example; the inferred
+        // type from the descriptor is the same ('onnx-ocr').
+        modelType: 'onnx-ocr',
         modelConfig: {
           langList: ['en'],
           detectorModelSrc: OCR_MODELS.detector,
         },
         onProgress: op,
-      }),
+      } as unknown as LoadModelOptions),
     onProgress,
   );
 }
@@ -145,12 +167,50 @@ export function ensureAssistantModel(onProgress?: ProgressListener): Promise<str
     (op) =>
       loadModel({
         modelSrc: ASSISTANT_MODELS.vlm,
+        modelType: 'llamacpp-completion',
         modelConfig: {
           ctx_size: 4096,
           projectionModelSrc: ASSISTANT_MODELS.projection,
         },
         onProgress: op,
-      }),
+      } as unknown as LoadModelOptions),
+    onProgress,
+  );
+}
+
+/** Load (or reuse) the Supertonic TTS voice for spoken translations. */
+export function ensureTtsModel(
+  language: TtsLanguage,
+  onProgress?: ProgressListener,
+): Promise<string> {
+  // One fast English-only variant; everything else uses the multilingual one.
+  const descriptor = language === 'en' ? TTS_MODELS.en : TTS_MODELS.multilingual;
+  return ensure(
+    `tts:${language}`,
+    'tts',
+    (op) =>
+      loadModel({
+        modelSrc: descriptor,
+        modelType: 'tts-ggml',
+        modelConfig: { ttsEngine: 'supertonic', language },
+        onProgress: op,
+      } as unknown as LoadModelOptions),
+    onProgress,
+  );
+}
+
+/** Load (or reuse) the embedding model backing the RAG phrasebook. */
+export function ensureEmbeddingModel(onProgress?: ProgressListener): Promise<string> {
+  return ensure(
+    'embed:gemma-300m',
+    'embed',
+    (op) =>
+      loadModel({
+        modelSrc: EMBEDDING_MODEL,
+        modelType: 'llamacpp-embedding',
+        modelConfig: {},
+        onProgress: op,
+      } as unknown as LoadModelOptions),
     onProgress,
   );
 }

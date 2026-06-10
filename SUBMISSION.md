@@ -39,9 +39,10 @@ All SDK calls live in [`src/qvac/`](src/qvac/). See [`docs/ARCHITECTURE.md`](doc
 
 ## 4. Reproducibility
 
-**Hardware used in the demo:** _TODO — fill device + specs:_
-- Phone: _model_, _chipset_, _RAM_, _storage_, Android _version_
-- Dev machine: _CPU / RAM / OS_ (+ screenshot of system profiler)
+**Hardware used in the demo:**
+- Phone: **Xiaomi 11i (21091116I)** — MediaTek Dimensity 920 (MT6877V), **8 GB RAM**, 128 GB storage (arm64-v8a), Android **13** (MIUI V816)
+- Dev machine: HP Pavilion Gaming 15-ec0xxx — AMD Ryzen 5 3550H, 14 GB RAM, Windows 11 Home (10.0.26200)
+- _Attach screenshots: phone About screen + `adb shell getprop ro.product.model` + Windows system info._
 
 **Run on a physical device (no emulators — QVAC requires real hardware):**
 ```bash

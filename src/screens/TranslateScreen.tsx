@@ -19,9 +19,12 @@ import {
 import { getLanguage, type Language } from '../data/languages';
 import { translateText } from '../qvac/translate';
 import { transcribeAudio } from '../qvac/transcribe';
+import { isSpeaking, isTtsLanguage, speak, stopSpeaking } from '../qvac/tts';
+import { logEvent } from '../qvac/telemetry';
 import { useModelLoader } from '../hooks/useModelLoader';
 import { colors, radius, spacing, typography } from '../theme';
-import { Button, Card, ModelLoadingOverlay, SectionLabel } from '../components/ui';
+import { Button, Card, ModelLoadingOverlay, Notice, SectionLabel } from '../components/ui';
+import { PerfChip } from '../components/PerfChip';
 import { LanguageChip, LanguagePicker } from '../components/LanguagePicker';
 import { PrivacyFooter } from '../components/PrivacyFooter';
 
@@ -36,9 +39,17 @@ export function TranslateScreen() {
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [errorNotice, setErrorNotice] = useState<{ title: string; detail?: string } | null>(null);
 
   const { state: loadState, begin, end, onProgress } = useModelLoader();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
+  const fail = (title: string, error: unknown) => {
+    const detail = String((error as Error)?.message ?? error);
+    setErrorNotice({ title, detail });
+    logEvent({ kind: 'error', model: 'translate', extra: { title, message: detail } });
+  };
 
   const startRecording = async () => {
     if (recording || transcribing || translating) return;
@@ -65,7 +76,7 @@ export function TranslateScreen() {
       const text = await transcribeAudio({ audioUri: uri, onProgress });
       if (text) setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
     } catch (error) {
-      Alert.alert('Transcription failed', String((error as Error)?.message ?? error));
+      fail('Transcription failed', error);
     } finally {
       end();
       setTranscribing(false);
@@ -73,6 +84,25 @@ export function TranslateScreen() {
   };
 
   const toggleRecording = () => (recording ? stopRecording() : startRecording());
+
+  const speakOutput = async () => {
+    if (!output || !isTtsLanguage(to)) return;
+    if (isSpeaking()) {
+      stopSpeaking();
+      setSpeaking(false);
+      return;
+    }
+    setSpeaking(true);
+    begin();
+    try {
+      await speak(output, to, onProgress);
+    } catch (error) {
+      fail('Speech failed', error);
+    } finally {
+      end();
+      setSpeaking(false);
+    }
+  };
 
   const swap = () => {
     setFrom(to);
@@ -90,6 +120,7 @@ export function TranslateScreen() {
     if (!input.trim() || translating) return;
     setTranslating(true);
     setOutput('');
+    setErrorNotice(null);
     begin();
     try {
       const result = await translateText({
@@ -101,7 +132,7 @@ export function TranslateScreen() {
       });
       setOutput(result);
     } catch (error) {
-      Alert.alert('Translation failed', String((error as Error)?.message ?? error));
+      fail('Translation failed', error);
     } finally {
       end();
       setTranslating(false);
@@ -172,18 +203,44 @@ export function TranslateScreen() {
             style={styles.cta}
           />
 
+          {errorNotice ? (
+            <Notice
+              tone="error"
+              title={errorNotice.title}
+              detail={errorNotice.detail}
+              onRetry={input.trim() ? handleTranslate : undefined}
+              onDismiss={() => setErrorNotice(null)}
+            />
+          ) : null}
+
           <SectionLabel>{getLanguage(to).label}</SectionLabel>
           <Card style={styles.outputCard}>
             {output ? (
-              <Text selectable style={styles.output}>
-                {output}
-              </Text>
+              <>
+                <Text selectable style={styles.output}>
+                  {output}
+                </Text>
+                {isTtsLanguage(to) ? (
+                  <TouchableOpacity
+                    onPress={speakOutput}
+                    activeOpacity={0.7}
+                    style={[styles.mic, styles.speakBtn, speaking && styles.micActive]}
+                  >
+                    <Text style={styles.micIcon}>{speaking ? '⏹' : '🔊'}</Text>
+                    <Text style={[styles.micLabel, speaking && styles.micLabelActive]}>
+                      {speaking ? 'Stop' : 'Listen'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </>
             ) : (
               <Text style={styles.outputPlaceholder}>
                 Your translation appears here — generated entirely on this device.
               </Text>
             )}
           </Card>
+
+          <PerfChip kinds={['translate', 'transcribe', 'tts', 'model_load']} accent={ACCENT} />
 
           <PrivacyFooter accent={ACCENT} />
         </ScrollView>
@@ -280,6 +337,7 @@ const styles = StyleSheet.create({
   micLabelActive: { ...typography.caption, color: '#fff', fontWeight: '800' },
   clear: { paddingTop: 0 },
   clearText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
+  speakBtn: { alignSelf: 'flex-start', marginTop: spacing.md },
   cta: { marginVertical: spacing.sm },
   outputCard: { minHeight: 110, justifyContent: 'center' },
   output: { ...typography.title, fontWeight: '600', color: colors.text, lineHeight: 28 },

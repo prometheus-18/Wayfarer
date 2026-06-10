@@ -7,6 +7,7 @@
 import { transcribe as qvacTranscribe } from '@qvac/sdk';
 import { ensureTranscribeModel, type ProgressListener } from './ModelManager';
 import { toModelPath } from './image';
+import { enqueue } from './queue';
 import { logEvent } from './telemetry';
 
 export interface TranscribeRequest {
@@ -21,14 +22,16 @@ export async function transcribeAudio(req: TranscribeRequest): Promise<string> {
   const modelId = await ensureTranscribeModel(req.onProgress);
 
   const startedAt = Date.now();
-  const text = await qvacTranscribe({
-    modelId,
-    audioChunk: toModelPath(req.audioUri),
-  });
+  const text = await enqueue('transcribe', () =>
+    qvacTranscribe({
+      modelId,
+      audioChunk: toModelPath(req.audioUri),
+    }),
+  );
 
   const transcript = (text ?? '').trim();
   logEvent({
-    kind: 'translate',
+    kind: 'transcribe',
     model: 'whisper:base',
     prompt: transcript,
     totalMs: Date.now() - startedAt,

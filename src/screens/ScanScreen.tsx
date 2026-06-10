@@ -12,9 +12,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { getLanguage, type Language } from '../data/languages';
 import { scanImage } from '../qvac/ocr';
 import { translateText } from '../qvac/translate';
+import { isSpeaking, isTtsLanguage, speak, stopSpeaking } from '../qvac/tts';
+import { PerfChip } from '../components/PerfChip';
+import { logEvent } from '../qvac/telemetry';
 import { useModelLoader } from '../hooks/useModelLoader';
 import { colors, radius, spacing, typography } from '../theme';
-import { Button, Card, EmptyState, ModelLoadingOverlay, Pill, SectionLabel } from '../components/ui';
+import { Button, Card, EmptyState, ModelLoadingOverlay, Notice, Pill, SectionLabel } from '../components/ui';
 import { LanguageChip, LanguagePicker } from '../components/LanguagePicker';
 import { PrivacyFooter } from '../components/PrivacyFooter';
 
@@ -28,22 +31,37 @@ export function ScanScreen() {
   const [to, setTo] = useState('en');
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
   const [busy, setBusy] = useState<'ocr' | 'translate' | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'error' | 'warning'; title: string; detail?: string } | null>(null);
+  const [lastUri, setLastUri] = useState<string | null>(null);
 
   const { state: loadState, begin, end, onProgress } = useModelLoader();
+
+  const fail = (title: string, error: unknown) => {
+    const detail = String((error as Error)?.message ?? error);
+    setNotice({ tone: 'error', title, detail });
+    logEvent({ kind: 'error', model: 'scan', extra: { title, message: detail } });
+  };
 
   const runOcr = async (uri: string) => {
     setBusy('ocr');
     setRecognized('');
     setOutput('');
+    setNotice(null);
+    setLastUri(uri);
     begin();
     try {
       const result = await scanImage(uri, onProgress);
       setRecognized(result.text);
       if (!result.text) {
-        Alert.alert('No text found', 'Try a sharper, well-lit photo of the text.');
+        // Model loaded and ran but found nothing — a soft outcome, not an error.
+        setNotice({
+          tone: 'warning',
+          title: 'No text found',
+          detail: 'Try a sharper, well-lit photo. Latin-script text works best.',
+        });
       }
     } catch (error) {
-      Alert.alert('Scan failed', String((error as Error)?.message ?? error));
+      fail('Scan failed', error);
     } finally {
       end();
       setBusy(null);
@@ -75,6 +93,7 @@ export function ScanScreen() {
     setBusy('translate');
     setOutput('');
     begin();
+    setNotice(null);
     try {
       const result = await translateText({
         text: recognized,
@@ -85,7 +104,7 @@ export function ScanScreen() {
       });
       setOutput(result);
     } catch (error) {
-      Alert.alert('Translation failed', String((error as Error)?.message ?? error));
+      fail('Translation failed', error);
     } finally {
       end();
       setBusy(null);
@@ -137,6 +156,16 @@ export function ScanScreen() {
           />
         </View>
 
+        {notice ? (
+          <Notice
+            tone={notice.tone}
+            title={notice.title}
+            detail={notice.detail}
+            onRetry={lastUri && notice.tone === 'error' ? () => runOcr(lastUri) : undefined}
+            onDismiss={() => setNotice(null)}
+          />
+        ) : null}
+
         {recognized ? (
           <>
             <View style={styles.rowBetween}>
@@ -170,11 +199,33 @@ export function ScanScreen() {
                   <Text selectable style={styles.output}>
                     {output}
                   </Text>
+                  {isTtsLanguage(to) ? (
+                    <TouchableOpacity
+                      onPress={async () => {
+                        if (!isTtsLanguage(to)) return;
+                        if (isSpeaking()) {
+                          stopSpeaking();
+                          return;
+                        }
+                        try {
+                          await speak(output, to, onProgress);
+                        } catch (error) {
+                          fail('Speech failed', error);
+                        }
+                      }}
+                      activeOpacity={0.7}
+                      style={styles.speak}
+                    >
+                      <Text style={styles.speakText}>🔊 Listen</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </Card>
               </>
             ) : null}
           </>
         ) : null}
+
+        <PerfChip kinds={['ocr', 'translate', 'tts', 'model_load']} accent={ACCENT} />
 
         <PrivacyFooter accent={ACCENT} />
       </ScrollView>
@@ -237,6 +288,8 @@ const styles = StyleSheet.create({
   arrow: { fontSize: 20, color: ACCENT, fontWeight: '800', marginHorizontal: spacing.sm },
   outputCard: { minHeight: 80, justifyContent: 'center' },
   output: { ...typography.title, fontWeight: '600', color: colors.text, lineHeight: 28 },
+  speak: { alignSelf: 'flex-start', marginTop: spacing.sm },
+  speakText: { ...typography.caption, color: ACCENT, fontWeight: '800' },
   privacyNote: {
     ...typography.caption,
     color: colors.textMuted,

@@ -14,9 +14,14 @@ export type InferenceKind =
   | 'model_load'
   | 'model_unload'
   | 'translate'
+  | 'transcribe'
   | 'ocr'
   | 'assistant'
-  | 'benchmark';
+  | 'benchmark'
+  | 'error'
+  | 'agent_tool'
+  | 'tts'
+  | 'rag';
 
 export interface InferenceLogEntry {
   /** ISO timestamp. */
@@ -81,6 +86,34 @@ export function logEvent(entry: Omit<InferenceLogEntry, 'ts'> & { prompt?: strin
   });
   if (entries.length > MAX_ENTRIES) entries.splice(0, entries.length - MAX_ENTRIES);
   notify();
+  persistSoon();
+}
+
+/**
+ * Crash-proof persistence: the demo's audit log must survive an app restart,
+ * so every change is (debounced and) mirrored to a JSON file in the app's
+ * document directory. Best-effort only — persistence must never interfere
+ * with an inference path.
+ */
+const LOG_FILENAME = 'wayfarer-audit-log.json';
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function logFilePath(): string {
+  const { File, Paths } = require('expo-file-system') as typeof import('expo-file-system');
+  return new File(Paths.document, LOG_FILENAME).uri;
+}
+
+function persistSoon(): void {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    try {
+      const { File, Paths } = require('expo-file-system') as typeof import('expo-file-system');
+      new File(Paths.document, LOG_FILENAME).write(toJSON());
+    } catch {
+      // best-effort
+    }
+  }, 750);
 }
 
 export function getEntries(): InferenceLogEntry[] {

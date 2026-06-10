@@ -9,10 +9,13 @@
 import * as Qvac from '@qvac/sdk';
 import {
   BERGAMOT_EN_ES,
+  EMBEDDINGGEMMA_300M_Q4_0,
   OCR_LATIN_RECOGNIZER_1,
   OCR_CRAFT_DETECTOR,
   SMOLVLM2_500M_MULTIMODAL_Q8_0,
   MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0,
+  TTS_EN_SUPERTONIC_Q4_0,
+  TTS_MULTILINGUAL_SUPERTONIC2_Q4_0,
   WHISPER_BASE_Q8_0,
 } from '@qvac/sdk';
 
@@ -44,6 +47,10 @@ export const SIZES = {
   assistant: 900 * 1024 * 1024,
   /** Whisper base (multilingual) speech-to-text. */
   transcribe: 82 * 1024 * 1024,
+  /** Supertonic TTS (per variant). */
+  tts: 132 * 1024 * 1024,
+  /** EmbeddingGemma-300M Q4 for the RAG phrasebook. */
+  embedding: 278 * 1024 * 1024,
 } as const;
 
 /** Multilingual Whisper model used for voice → text on the Translate screen. */
@@ -58,6 +65,15 @@ export const ASSISTANT_MODELS = {
   vlm: SMOLVLM2_500M_MULTIMODAL_Q8_0,
   projection: MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0,
 } as const;
+
+/** Supertonic speech synthesis: a fast English variant + a multilingual one. */
+export const TTS_MODELS = {
+  en: TTS_EN_SUPERTONIC_Q4_0,
+  multilingual: TTS_MULTILINGUAL_SUPERTONIC2_Q4_0,
+} as const;
+
+/** Embedding model backing the offline RAG phrasebook. */
+export const EMBEDDING_MODEL = EMBEDDINGGEMMA_300M_Q4_0;
 
 export function formatBytes(bytes: number): string {
   if (!bytes || bytes < 0) return '0 MB';

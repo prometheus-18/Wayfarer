@@ -4,8 +4,12 @@
  */
 import { ocr as qvacOcr, type OCRTextBlock } from '@qvac/sdk';
 import { ensureOcrModel, type ProgressListener } from './ModelManager';
-import { toModelPath } from './image';
+import { toReadablePath } from './image';
+import { enqueue } from './queue';
 import { logEvent, raceStats } from './telemetry';
+
+/** A stalled worker stream must never freeze the Scan screen forever. */
+const OCR_TIMEOUT_MS = 60_000;
 
 export interface OcrResult {
   /** Raw recognized blocks, in reading order. */
@@ -19,15 +23,29 @@ export async function scanImage(
   onProgress?: ProgressListener,
 ): Promise<OcrResult> {
   const modelId = await ensureOcrModel(onProgress);
+  const image = await toReadablePath(imageUri);
 
   const startedAt = Date.now();
-  const { blocks, stats } = qvacOcr({
-    modelId,
-    image: toModelPath(imageUri),
-    options: { paragraph: true },
+  // Serialized: the worker replaces in-flight jobs for the same engine.
+  const { recognized, stats } = await enqueue('ocr', async () => {
+    const { blocks, stats: s } = qvacOcr({
+      modelId,
+      image,
+      options: { paragraph: true },
+    });
+    // The SDK's OCR client never surfaces worker-side errors on this stream —
+    // a failure just means `blocks` never resolves. Bound it.
+    const result = await Promise.race([
+      blocks,
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('Scan timed out — try a smaller or clearer photo.')),
+          OCR_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+    return { recognized: result, stats: s };
   });
-
-  const recognized = await blocks;
   const text = recognized
     .map((block) => block.text.trim())
     .filter(Boolean)

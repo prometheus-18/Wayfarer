@@ -148,6 +148,56 @@ export function EmptyState({
   );
 }
 
+interface NoticeProps {
+  tone?: 'error' | 'warning' | 'info';
+  title: string;
+  detail?: string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}
+
+/**
+ * Inline notice for errors/warnings — replaces modal Alerts so failures stay
+ * visible (and screenshot-able) instead of vanishing. Errors surfaced here
+ * are also mirrored to the audit log by the calling screen.
+ */
+export function Notice({ tone = 'error', title, detail, onRetry, onDismiss }: NoticeProps) {
+  const color =
+    tone === 'error' ? colors.danger : tone === 'warning' ? colors.warning : colors.primary;
+  return (
+    <View
+      style={[
+        styles.notice,
+        { backgroundColor: hexWithAlpha(color, 0.1), borderColor: hexWithAlpha(color, 0.35) },
+      ]}
+    >
+      <View style={styles.noticeBody}>
+        <Text style={[styles.noticeTitle, { color }]}>
+          {tone === 'error' ? '⚠️ ' : tone === 'warning' ? '🟡 ' : 'ℹ️ '}
+          {title}
+        </Text>
+        {detail ? (
+          <Text selectable style={styles.noticeDetail}>
+            {detail}
+          </Text>
+        ) : null}
+      </View>
+      <View style={styles.noticeActions}>
+        {onRetry ? (
+          <TouchableOpacity onPress={onRetry} hitSlop={8}>
+            <Text style={[styles.noticeAction, { color }]}>Retry</Text>
+          </TouchableOpacity>
+        ) : null}
+        {onDismiss ? (
+          <TouchableOpacity onPress={onDismiss} hitSlop={8}>
+            <Text style={[styles.noticeAction, { color: colors.textMuted }]}>Dismiss</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 export function Pill({ label, color = colors.primary }: { label: string; color?: string }) {
   return (
     <View style={[styles.pill, { backgroundColor: hexWithAlpha(color, 0.12) }]}>
@@ -261,6 +311,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
   },
+  notice: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  noticeBody: { gap: 2 },
+  noticeTitle: { ...typography.bodyStrong },
+  noticeDetail: { ...typography.caption, color: colors.textMuted, lineHeight: 17 },
+  noticeActions: { flexDirection: 'row', gap: spacing.lg, justifyContent: 'flex-end' },
+  noticeAction: { ...typography.caption, fontWeight: '800', textTransform: 'uppercase' },
   pill: {
     paddingHorizontal: spacing.md,
     paddingVertical: 6,

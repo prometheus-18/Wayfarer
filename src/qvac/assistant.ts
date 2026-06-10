@@ -6,8 +6,16 @@
 import { completion } from '@qvac/sdk';
 import { ensureAssistantModel, type ProgressListener } from './ModelManager';
 import { toModelPath } from './image';
+import { enqueue } from './queue';
 import { ASSISTANT_SYSTEM_PROMPT, LIMITS, looksLikeInjection, sanitizeText } from './security';
 import { logEvent } from './telemetry';
+
+/**
+ * The full transcript is replayed each turn against a 4096-token context;
+ * long demo conversations would overflow it, so only the most recent turns
+ * are sent (the system prompt is always included).
+ */
+const MAX_HISTORY_TURNS = 10;
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -61,22 +69,24 @@ export async function askAssistant(opts: AskOptions): Promise<string> {
 
   const history: HistoryMessage[] = [
     { role: 'system', content: ASSISTANT_SYSTEM_PROMPT },
-    ...opts.history.map(toMessage),
+    ...opts.history.slice(-MAX_HISTORY_TURNS).map(toMessage),
     toMessage({ role: 'user', content: opts.prompt, imageUri: opts.imageUri }),
   ];
 
-  const run = completion({ modelId, history, stream: true });
-
   let reply = '';
   let stats: CapturedStats | undefined;
-  for await (const event of run.events) {
-    if (event.type === 'contentDelta') {
-      reply += event.text;
-      opts.onToken?.(reply);
-    } else if (event.type === 'completionStats') {
-      stats = event.stats;
+  // Serialized: a second completion on the same engine would replace this one.
+  await enqueue('assistant', async () => {
+    const run = completion({ modelId, history, stream: true });
+    for await (const event of run.events) {
+      if (event.type === 'contentDelta') {
+        reply += event.text;
+        opts.onToken?.(reply);
+      } else if (event.type === 'completionStats') {
+        stats = event.stats;
+      }
     }
-  }
+  });
 
   logEvent({
     kind: 'assistant',

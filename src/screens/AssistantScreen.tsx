@@ -11,11 +11,13 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { askAssistant, type ChatRole } from '../qvac/assistant';
+import { type ChatRole } from '../qvac/assistant';
+import { runAgent, type AgentTraceStep } from '../qvac/agent';
 import { useModelLoader } from '../hooks/useModelLoader';
 import { colors, radius, spacing, typography } from '../theme';
 import { ModelLoadingOverlay } from '../components/ui';
 import { hexWithAlpha } from '../components/ui';
+import { PerfChip } from '../components/PerfChip';
 
 const ACCENT = colors.assistant;
 
@@ -24,6 +26,8 @@ interface Message {
   role: ChatRole;
   content: string;
   imageUri?: string;
+  /** Tool-orchestration steps taken by the agent for this reply. */
+  trace?: AgentTraceStep[];
 }
 
 const SUGGESTIONS = [
@@ -44,8 +48,8 @@ export function AssistantScreen() {
 
   const { state: loadState, begin, end, onProgress } = useModelLoader();
 
-  const updateMessage = (id: string, content: string) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content } : m)));
+  const updateMessage = (id: string, patch: Partial<Message>) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   };
 
   const scrollToEnd = () => {
@@ -89,18 +93,22 @@ export function AssistantScreen() {
     scrollToEnd();
 
     try {
-      await askAssistant({
-        history: priorTurns,
+      await runAgent({
+        history: priorTurns.map(({ role, content }) => ({ role, content })),
         prompt: text || 'Describe this image for a traveler and translate any text in it.',
         imageUri: userMessage.imageUri,
         onProgress,
+        onTrace: (steps) => {
+          updateMessage(assistantId, { trace: steps });
+          scrollToEnd();
+        },
         onToken: (partial) => {
-          updateMessage(assistantId, partial);
+          updateMessage(assistantId, { content: partial });
           scrollToEnd();
         },
       });
     } catch (error) {
-      updateMessage(assistantId, `⚠️ ${String((error as Error)?.message ?? error)}`);
+      updateMessage(assistantId, { content: `⚠️ ${String((error as Error)?.message ?? error)}` });
     } finally {
       end();
       setSending(false);
@@ -164,6 +172,10 @@ export function AssistantScreen() {
           </View>
         ) : null}
 
+        <View style={styles.perfRow}>
+          <PerfChip kinds={['assistant', 'agent_tool', 'rag', 'model_load']} accent={ACCENT} />
+        </View>
+
         <View style={styles.composer}>
           <TouchableOpacity style={styles.iconButton} onPress={attachFromCamera}>
             <Text style={styles.iconText}>📷</Text>
@@ -201,6 +213,13 @@ export function AssistantScreen() {
   );
 }
 
+const TOOL_ICONS: Record<AgentTraceStep['tool'], string> = {
+  translate: '🌐',
+  scan_image: '📷',
+  phrasebook: '📖',
+  answer: '💬',
+};
+
 function Bubble({ message }: { message: Message }) {
   const isUser = message.role === 'user';
   return (
@@ -214,10 +233,21 @@ function Bubble({ message }: { message: Message }) {
         {message.imageUri ? (
           <Image source={{ uri: message.imageUri }} style={styles.bubbleImage} />
         ) : null}
+        {!isUser && message.trace && message.trace.length > 0 ? (
+          <View style={styles.trace}>
+            {message.trace.map((step, index) => (
+              <Text key={`${step.tool}-${index}`} style={styles.traceStep} numberOfLines={1}>
+                {TOOL_ICONS[step.tool]} {step.summary} · {(step.ms / 1000).toFixed(1)}s
+              </Text>
+            ))}
+          </View>
+        ) : null}
         {message.content ? (
           <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>{message.content}</Text>
         ) : (
-          <Text style={[styles.bubbleText, styles.bubbleTyping]}>Thinking…</Text>
+          <Text style={[styles.bubbleText, styles.bubbleTyping]}>
+            {message.trace?.length ? 'Working with tools…' : 'Thinking…'}
+          </Text>
         )}
       </View>
     </View>
@@ -282,6 +312,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     marginBottom: spacing.sm,
   },
+  perfRow: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xs },
+  trace: {
+    gap: 3,
+    marginBottom: spacing.sm,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  traceStep: { ...typography.caption, color: colors.textMuted },
   attachmentPreview: {
     flexDirection: 'row',
     alignItems: 'center',
