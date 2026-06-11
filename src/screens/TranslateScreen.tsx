@@ -22,13 +22,16 @@ import { transcribeAudio } from '../qvac/transcribe';
 import { isSpeaking, isTtsLanguage, speak, stopSpeaking } from '../qvac/tts';
 import { logEvent } from '../qvac/telemetry';
 import { useModelLoader } from '../hooks/useModelLoader';
-import { colors, radius, spacing, typography } from '../theme';
+import { colors, glow, radius, spacing, typography } from '../theme';
 import { Button, Card, ModelLoadingOverlay, Notice, SectionLabel } from '../components/ui';
 import { PerfChip } from '../components/PerfChip';
 import { LanguageChip, LanguagePicker } from '../components/LanguagePicker';
 import { PrivacyFooter } from '../components/PrivacyFooter';
+import { PrepareOfflineSheet } from '../components/PrepareOfflineSheet';
 
 const ACCENT = colors.translate;
+
+type VoiceStage = 'idle' | 'listening' | 'transcribing';
 
 export function TranslateScreen() {
   const [from, setFrom] = useState('en');
@@ -37,15 +40,20 @@ export function TranslateScreen() {
   const [output, setOutput] = useState('');
   const [translating, setTranslating] = useState(false);
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
+  const [voiceStage, setVoiceStage] = useState<VoiceStage>('idle');
   const [speaking, setSpeaking] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(true);
   const [errorNotice, setErrorNotice] = useState<{ title: string; detail?: string } | null>(null);
+  const [prepareOpen, setPrepareOpen] = useState(false);
 
   const { state: loadState, begin, end, onProgress } = useModelLoader();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordingRef = useRef(false);
   const autoStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const recording = voiceStage === 'listening';
+  const transcribing = voiceStage === 'transcribing';
+  const busy = translating || transcribing;
 
   const fail = (title: string, error: unknown) => {
     const detail = String((error as Error)?.message ?? error);
@@ -53,22 +61,52 @@ export function TranslateScreen() {
     logEvent({ kind: 'error', model: 'translate', extra: { title, message: detail } });
   };
 
+  const runTranslate = async (text: string, speakWhenDone: boolean) => {
+    const trimmed = text.trim();
+    if (!trimmed || translating) return;
+    stopSpeaking();
+    setSpeaking(false);
+    setTranslating(true);
+    setOutput('');
+    setErrorNotice(null);
+    begin();
+    try {
+      const result = await translateText({
+        text: trimmed,
+        from,
+        to,
+        onProgress,
+        onToken: setOutput,
+      });
+      setOutput(result);
+      if (speakWhenDone && autoPlay && result && isTtsLanguage(to)) {
+        void playOutput(result);
+      }
+    } catch (error) {
+      fail('Translation failed', error);
+    } finally {
+      end();
+      setTranslating(false);
+    }
+  };
+
   const startRecording = async () => {
-    if (recording || transcribing || translating) return;
+    if (busy || recording) return;
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Microphone needed', 'Enable microphone access to dictate text.');
       return;
     }
+    stopSpeaking();
+    setSpeaking(false);
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
     recordingRef.current = true;
-    setRecording(true);
-    // Cap clip length: Whisper on a phone runs near real-time, so a very
-    // long recording means an equally long transcription wait.
+    setVoiceStage('listening');
+    // Cap clip length: Whisper runs near real-time, so a long clip = a long wait.
     if (autoStopTimer.current) clearTimeout(autoStopTimer.current);
-    autoStopTimer.current = setTimeout(() => stopRecording(), 30_000);
+    autoStopTimer.current = setTimeout(() => void stopRecording(), 30_000);
   };
 
   const stopRecording = async () => {
@@ -78,42 +116,50 @@ export function TranslateScreen() {
       clearTimeout(autoStopTimer.current);
       autoStopTimer.current = null;
     }
-    setRecording(false);
-    setTranscribing(true);
+    setVoiceStage('transcribing');
     begin();
+    let transcript = '';
     try {
       await recorder.stop();
       const uri = recorder.uri;
       if (!uri) throw new Error('Recording produced no audio file.');
-      const text = await transcribeAudio({ audioUri: uri, onProgress });
-      if (text) setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+      transcript = await transcribeAudio({
+        audioUri: uri,
+        onProgress,
+        onPartial: (partial) => setInput(partial),
+      });
+      if (transcript) setInput(transcript);
     } catch (error) {
       fail('Transcription failed', error);
     } finally {
       end();
-      setTranscribing(false);
+      setVoiceStage('idle');
+    }
+    // One-gesture voice-to-voice: speak → transcribe → translate → speak.
+    if (transcript.trim()) void runTranslate(transcript, true);
+  };
+
+  const toggleRecording = () => (recording ? void stopRecording() : void startRecording());
+
+  const playOutput = async (text: string) => {
+    if (!isTtsLanguage(to)) return;
+    setSpeaking(true);
+    try {
+      await speak(text, to, onProgress);
+    } catch (error) {
+      fail('Speech failed', error);
+    } finally {
+      setSpeaking(false);
     }
   };
 
-  const toggleRecording = () => (recording ? stopRecording() : startRecording());
-
-  const speakOutput = async () => {
-    if (!output || !isTtsLanguage(to)) return;
-    if (isSpeaking()) {
+  const onListen = () => {
+    if (speaking || isSpeaking()) {
       stopSpeaking();
       setSpeaking(false);
       return;
     }
-    setSpeaking(true);
-    begin();
-    try {
-      await speak(output, to, onProgress);
-    } catch (error) {
-      fail('Speech failed', error);
-    } finally {
-      end();
-      setSpeaking(false);
-    }
+    if (output) void playOutput(output);
   };
 
   const swap = () => {
@@ -128,32 +174,26 @@ export function TranslateScreen() {
     if (picker === 'to') setTo(language.code);
   };
 
-  const handleTranslate = async () => {
-    if (!input.trim() || translating) return;
-    setTranslating(true);
-    setOutput('');
-    setErrorNotice(null);
-    begin();
-    try {
-      const result = await translateText({
-        text: input,
-        from,
-        to,
-        onProgress,
-        onToken: setOutput,
-      });
-      setOutput(result);
-    } catch (error) {
-      fail('Translation failed', error);
-    } finally {
-      end();
-      setTranslating(false);
-    }
-  };
+  const toLang = getLanguage(to);
+  const canSpeakTarget = isTtsLanguage(to);
 
   return (
     <View style={styles.container}>
-      <ScrollViewHeader />
+      <View style={styles.header}>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Translate</Text>
+          <Text style={styles.subtitle}>Offline · on-device · 48 languages</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.gear}
+          activeOpacity={0.7}
+          onPress={() => setPrepareOpen(true)}
+          accessibilityLabel="Prepare for offline"
+        >
+          <Text style={styles.gearIcon}>⬇️</Text>
+        </TouchableOpacity>
+      </View>
+
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -163,6 +203,7 @@ export function TranslateScreen() {
           style={styles.flex}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           <Card style={styles.langBar}>
             <LanguageChip code={from} accent={ACCENT} onPress={() => setPicker('from')} />
@@ -173,31 +214,34 @@ export function TranslateScreen() {
           </Card>
 
           <SectionLabel>{getLanguage(from).label}</SectionLabel>
-          <Card>
+          <Card style={[styles.inputCard, recording && glow(colors.danger, 0.5)]}>
             <TextInput
               style={styles.input}
-              placeholder="Type something to translate…"
+              placeholder="Type, or hold the mic and speak…"
               placeholderTextColor={colors.textFaint}
               value={input}
               onChangeText={setInput}
               multiline
               textAlignVertical="top"
+              editable={!recording && !transcribing}
             />
             <View style={styles.inputFooter}>
               <TouchableOpacity
                 onPress={toggleRecording}
-                disabled={transcribing}
-                activeOpacity={0.7}
-                style={[styles.mic, recording && styles.micActive]}
+                disabled={transcribing || translating}
+                activeOpacity={0.8}
+                style={[
+                  styles.mic,
+                  recording && styles.micRecording,
+                  recording && glow(colors.danger, 0.6),
+                ]}
               >
-                <Text style={[styles.micIcon, recording && styles.micIconActive]}>
-                  {recording ? '⏹' : '🎙'}
-                </Text>
+                <Text style={styles.micIcon}>{recording ? '⏹' : '🎙'}</Text>
                 <Text style={[styles.micLabel, recording && styles.micLabelActive]}>
                   {recording ? 'Tap to stop' : transcribing ? 'Transcribing…' : 'Speak'}
                 </Text>
               </TouchableOpacity>
-              {input.length > 0 ? (
+              {input.length > 0 && !recording ? (
                 <TouchableOpacity onPress={() => setInput('')} style={styles.clear}>
                   <Text style={styles.clearText}>Clear</Text>
                 </TouchableOpacity>
@@ -210,9 +254,9 @@ export function TranslateScreen() {
             icon="🌐"
             accent={ACCENT}
             loading={translating}
-            disabled={!input.trim()}
-            onPress={handleTranslate}
-            style={styles.cta}
+            disabled={!input.trim() || recording}
+            onPress={() => void runTranslate(input, false)}
+            style={[styles.cta, !!input.trim() && !translating && glow(ACCENT, 0.5)]}
           />
 
           {errorNotice ? (
@@ -220,30 +264,48 @@ export function TranslateScreen() {
               tone="error"
               title={errorNotice.title}
               detail={errorNotice.detail}
-              onRetry={input.trim() ? handleTranslate : undefined}
+              onRetry={input.trim() ? () => void runTranslate(input, false) : undefined}
               onDismiss={() => setErrorNotice(null)}
             />
           ) : null}
 
-          <SectionLabel>{getLanguage(to).label}</SectionLabel>
-          <Card style={styles.outputCard}>
+          <View style={styles.outputHeader}>
+            <SectionLabel style={styles.noMargin}>{toLang.label}</SectionLabel>
+            <TouchableOpacity
+              style={styles.autoToggle}
+              activeOpacity={0.7}
+              onPress={() => setAutoPlay((v) => !v)}
+            >
+              <Text style={[styles.autoToggleText, autoPlay && { color: ACCENT }]}>
+                {autoPlay ? '🔊 Auto-play on' : '🔇 Auto-play off'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Card style={[styles.outputCard, !!output && glow(ACCENT, 0.25)]}>
             {output ? (
               <>
                 <Text selectable style={styles.output}>
                   {output}
                 </Text>
-                {isTtsLanguage(to) ? (
-                  <TouchableOpacity
-                    onPress={speakOutput}
-                    activeOpacity={0.7}
-                    style={[styles.mic, styles.speakBtn, speaking && styles.micActive]}
-                  >
-                    <Text style={styles.micIcon}>{speaking ? '⏹' : '🔊'}</Text>
-                    <Text style={[styles.micLabel, speaking && styles.micLabelActive]}>
-                      {speaking ? 'Stop' : 'Listen'}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
+                <TouchableOpacity
+                  onPress={onListen}
+                  disabled={!canSpeakTarget}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.listen,
+                    speaking && styles.listenActive,
+                    !canSpeakTarget && styles.listenDisabled,
+                  ]}
+                >
+                  <Text style={[styles.listenText, speaking && styles.listenTextActive]}>
+                    {!canSpeakTarget
+                      ? `🔇 Voice not available for ${toLang.label}`
+                      : speaking
+                        ? '⏹ Stop'
+                        : '🔊 Listen'}
+                  </Text>
+                </TouchableOpacity>
               </>
             ) : (
               <Text style={styles.outputPlaceholder}>
@@ -268,8 +330,14 @@ export function TranslateScreen() {
         onClose={() => setPicker(null)}
       />
 
+      <PrepareOfflineSheet
+        visible={prepareOpen}
+        onClose={() => setPrepareOpen(false)}
+        accent={ACCENT}
+      />
+
       <ModelLoadingOverlay
-        visible={loadState.active && (translating || transcribing)}
+        visible={loadState.active && busy}
         title={transcribing ? 'Loading speech model' : 'Loading translation model'}
         subtitle="First time only — it is cached on your device afterwards."
         percentage={loadState.percentage}
@@ -280,25 +348,31 @@ export function TranslateScreen() {
   );
 }
 
-function ScrollViewHeader() {
-  return (
-    <View style={styles.header}>
-      <Text style={styles.title}>Translate</Text>
-      <Text style={styles.subtitle}>Offline neural translation in 16+ languages</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
   },
+  headerText: { flex: 1 },
   title: { ...typography.display, color: colors.text },
   subtitle: { ...typography.body, color: colors.textMuted, marginTop: 2 },
+  gear: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gearIcon: { fontSize: 18 },
   content: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -312,15 +386,18 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   swap: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: spacing.sm,
   },
   swapIcon: { fontSize: 20, color: ACCENT, fontWeight: '800' },
+  inputCard: { minHeight: 150 },
   input: {
     ...typography.body,
     color: colors.text,
@@ -337,27 +414,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  micActive: { backgroundColor: ACCENT },
-  micIcon: { fontSize: 14 },
-  micIconActive: { fontSize: 14 },
-  micLabel: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
-  micLabelActive: { ...typography.caption, color: '#fff', fontWeight: '800' },
-  clear: { paddingTop: 0 },
+  micRecording: { backgroundColor: colors.danger, borderColor: colors.danger },
+  micIcon: { fontSize: 15 },
+  micLabel: { ...typography.caption, color: colors.primary, fontWeight: '800' },
+  micLabelActive: { color: colors.white },
+  clear: { paddingHorizontal: spacing.sm },
   clearText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
-  speakBtn: { alignSelf: 'flex-start', marginTop: spacing.md },
   cta: { marginVertical: spacing.sm },
-  outputCard: { minHeight: 110, justifyContent: 'center' },
-  output: { ...typography.title, fontWeight: '600', color: colors.text, lineHeight: 28 },
-  outputPlaceholder: { ...typography.body, color: colors.textFaint },
-  privacyNote: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.lg,
+  outputHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
   },
+  noMargin: { marginBottom: 0 },
+  autoToggle: { paddingVertical: 4 },
+  autoToggleText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
+  outputCard: { minHeight: 120, justifyContent: 'center' },
+  output: { ...typography.title, fontWeight: '600', color: colors.text, lineHeight: 30 },
+  outputPlaceholder: { ...typography.body, color: colors.textFaint },
+  listen: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  listenActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+  listenDisabled: { backgroundColor: 'transparent', borderColor: 'transparent' },
+  listenText: { ...typography.caption, color: colors.primary, fontWeight: '800' },
+  listenTextActive: { color: colors.black },
 });

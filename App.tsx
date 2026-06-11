@@ -14,7 +14,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <View style={styles.body}>
         {/* All screens stay mounted so their state (chat, translations) persists. */}
         <Pane visible={active === 'translate'}>

@@ -267,10 +267,12 @@ const styles = StyleSheet.create({
   overlayCard: {
     width: '100%',
     maxWidth: 340,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.sheet,
     borderRadius: radius.xl,
     padding: spacing.xl,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
     ...shadow.floating,
   },
   overlayTitle: {

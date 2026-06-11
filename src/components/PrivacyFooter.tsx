@@ -117,8 +117,10 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.sheet,
     borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.xl,
     ...shadow.floating,
   },

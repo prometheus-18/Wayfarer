@@ -25,6 +25,12 @@ export type ProgressListener = (progress: ModelProgressUpdate) => void;
 
 type Group = 'translate' | 'ocr' | 'assistant' | 'transcribe' | 'tts' | 'embed';
 const HEAVY_GROUPS: Group[] = ['ocr', 'assistant'];
+/**
+ * Translation pairs are tiny (~35 MB) but a long session pivoting across many
+ * languages accumulates them in worker RAM. Keep only the most-recently-used
+ * few resident (LRU); the rest reload from the on-disk cache in ~1 s.
+ */
+const MAX_TRANSLATE_RESIDENT = 4;
 
 interface LoadedModel {
   modelId: string;
@@ -98,6 +104,7 @@ async function ensure(
       const modelId = await load((p) => onProgress?.(p));
       loaded.set(key, { modelId, group });
       logEvent({ kind: 'model_load', model: key, totalMs: Date.now() - startedAt, extra: { group } });
+      if (group === 'translate') void evictExcessTranslationModels(key);
       return modelId;
     } catch (error) {
       // A failed load must leave an audit trail (and not poison the cache).
@@ -116,6 +123,24 @@ async function ensure(
     return await task;
   } finally {
     inflight.delete(key);
+  }
+}
+
+/** Evict least-recently-loaded translation models beyond the resident cap. */
+async function evictExcessTranslationModels(keepKey: string): Promise<void> {
+  // Map preserves insertion order; oldest translate entries come first.
+  const translate = [...loaded.entries()].filter(([, m]) => m.group === 'translate');
+  const excess = translate.length - MAX_TRANSLATE_RESIDENT;
+  for (let i = 0; i < excess; i += 1) {
+    const [key, model] = translate[i];
+    if (key === keepKey) continue;
+    try {
+      await unloadModel({ modelId: model.modelId });
+    } catch {
+      // best-effort
+    }
+    loaded.delete(key);
+    logEvent({ kind: 'model_unload', model: key, extra: { reason: 'translate_lru' } });
   }
 }
 

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   FlatList,
   Modal,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -31,6 +32,18 @@ export function LanguagePicker({
   onSelect,
   onClose,
 }: LanguagePickerProps) {
+  const [query, setQuery] = useState('');
+  const data = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return ALL_LANGUAGES;
+    return ALL_LANGUAGES.filter(
+      (l) =>
+        l.label.toLowerCase().includes(q) ||
+        l.native.toLowerCase().includes(q) ||
+        l.code.includes(q),
+    );
+  }, [query]);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -38,8 +51,18 @@ export function LanguagePicker({
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <Text style={styles.title}>{title}</Text>
+          <TextInput
+            style={styles.search}
+            placeholder={`Search ${ALL_LANGUAGES.length} languages…`}
+            placeholderTextColor={colors.textFaint}
+            value={query}
+            onChangeText={setQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
           <FlatList
-            data={ALL_LANGUAGES}
+            data={data}
+            keyboardShouldPersistTaps="handled"
             keyExtractor={(item) => item.code}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: spacing.xl }}
@@ -108,10 +131,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheet: {
-    maxHeight: '72%',
-    backgroundColor: colors.surface,
+    maxHeight: '80%',
+    backgroundColor: colors.sheet,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     ...shadow.floating,
@@ -127,6 +152,17 @@ const styles = StyleSheet.create({
   title: {
     ...typography.title,
     color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  search: {
+    ...typography.body,
+    color: colors.text,
+    backgroundColor: colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
   },
   row: {

@@ -61,7 +61,7 @@ export function TabBar({ active, onChange }: TabBarProps) {
 const styles = StyleSheet.create({
   wrapper: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bgElevated,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
