@@ -13,8 +13,8 @@ import { runStressSuite, type CaseStatus, type StressGroup } from '../qvac/stres
 
 export const AUTOBENCH: { enabled: boolean; groups: StressGroup[]; only?: string[] } = {
   enabled: false,
-  groups: ['translate', 'probe'],
-  only: ['t-basic', 'f-tts'],
+  groups: ['probe'],
+  only: ['p-tts-langs'],
 };
 
 export function useAutoBenchmark(): void {

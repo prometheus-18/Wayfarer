@@ -15,13 +15,17 @@ import { sanitizeText } from './security';
 import { logEvent } from './telemetry';
 
 /**
- * Languages Supertonic can speak. Mirrors the SDK's `TTS_LANGUAGES` enum in
- * its TTS load config (`@qvac/sdk` schemas), which isn't re-exported from the
- * package root.
+ * Languages Supertonic can actually speak on-device.
+ *
+ * The SDK's load-config schema *claims* en/de/es/it, but the native Supertonic
+ * engine rejects de and it at synthesis time ("invalid Supertonic language")
+ * — verified empirically on-device (see the `p-tts-langs` stress probe). We
+ * only expose voice for the languages that genuinely synthesize, so the Listen
+ * button never offers something QVAC can't deliver.
  */
-export type TtsLanguage = 'en' | 'es' | 'de' | 'it';
+export type TtsLanguage = 'en' | 'es';
 
-const TTS_LANGUAGES: readonly TtsLanguage[] = ['en', 'es', 'de', 'it'];
+const TTS_LANGUAGES: readonly TtsLanguage[] = ['en', 'es'];
 
 /** True when a translation target language can also be spoken aloud. */
 export function isTtsLanguage(code: string): code is TtsLanguage {

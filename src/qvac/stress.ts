@@ -20,12 +20,14 @@ import {
   QWEN3_600M_INST_Q4,
   type LoadModelOptions,
 } from '@qvac/sdk';
+import { textToSpeech as qvacTextToSpeech } from '@qvac/sdk';
 import { translateText } from './translate';
 import { scanImage } from './ocr';
 import { askAssistant } from './assistant';
 import { runAgent } from './agent';
 import { searchPhrases } from './rag';
 import { speak } from './tts';
+import { ensureTtsModel } from './ModelManager';
 import { LIMITS } from './security';
 import { logEvent } from './telemetry';
 import type { ProgressListener } from './ModelManager';
@@ -362,6 +364,42 @@ const CASES: CaseDef[] = [
       );
       await unloadModel({ modelId });
       return 'qwen3-600m loads';
+    },
+  },
+  {
+    id: 'p-tts-langs',
+    title: 'Probe: which languages Supertonic actually speaks',
+    group: 'probe',
+    run: async (ctx) => {
+      // Deliberately probes codes beyond the supported TtsLanguage union to
+      // re-verify what the native engine actually accepts; cast is intentional.
+      const candidates: { code: string; sample: string }[] = [
+        { code: 'en', sample: 'Hello, this is a test.' },
+        { code: 'es', sample: 'Hola, esto es una prueba.' },
+        { code: 'de', sample: 'Hallo, das ist ein Test.' },
+        { code: 'it', sample: 'Ciao, questo è un test.' },
+      ];
+      const works: string[] = [];
+      const fails: string[] = [];
+      for (const c of candidates) {
+        try {
+          const modelId = await within(
+            120_000,
+            `tts load ${c.code}`,
+            ensureTtsModel(c.code as 'en', ctx.onProgress),
+          );
+          const samples = await within(
+            60_000,
+            `synth ${c.code}`,
+            qvacTextToSpeech({ modelId, text: c.sample, inputType: 'text', stream: false }).buffer,
+          );
+          if (samples.length > 0) works.push(c.code);
+          else fails.push(`${c.code}(empty)`);
+        } catch (error) {
+          fails.push(`${c.code}(${String((error as Error)?.message ?? error).slice(0, 40)})`);
+        }
+      }
+      return `SPEAKS: [${works.join(',')}] · FAILS: [${fails.join(' | ')}]`;
     },
   },
   {

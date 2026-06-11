@@ -43,7 +43,11 @@ export function TranslateScreen() {
   const [voiceStage, setVoiceStage] = useState<VoiceStage>('idle');
   const [speaking, setSpeaking] = useState(false);
   const [autoPlay, setAutoPlay] = useState(true);
-  const [errorNotice, setErrorNotice] = useState<{ title: string; detail?: string } | null>(null);
+  const [errorNotice, setErrorNotice] = useState<{
+    title: string;
+    detail?: string;
+    tone?: 'error' | 'warning';
+  } | null>(null);
   const [prepareOpen, setPrepareOpen] = useState(false);
 
   const { state: loadState, begin, end, onProgress } = useModelLoader();
@@ -79,8 +83,10 @@ export function TranslateScreen() {
         onToken: setOutput,
       });
       setOutput(result);
+      // Auto-play is a convenience: if speech fails, never let it surface as a
+      // translation error — the translation itself succeeded.
       if (speakWhenDone && autoPlay && result && isTtsLanguage(to)) {
-        void playOutput(result);
+        void playOutput(result, true);
       }
     } catch (error) {
       fail('Translation failed', error);
@@ -141,13 +147,23 @@ export function TranslateScreen() {
 
   const toggleRecording = () => (recording ? void stopRecording() : void startRecording());
 
-  const playOutput = async (text: string) => {
+  const playOutput = async (text: string, silent: boolean) => {
     if (!isTtsLanguage(to)) return;
     setSpeaking(true);
     try {
       await speak(text, to, onProgress);
     } catch (error) {
-      fail('Speech failed', error);
+      const message = String((error as Error)?.message ?? error);
+      logEvent({ kind: 'error', model: 'tts', extra: { message } });
+      // A speech hiccup must never read as a translation failure. Auto-play
+      // fails silently; an explicit Listen tap gets a gentle warning.
+      if (!silent) {
+        setErrorNotice({
+          tone: 'warning',
+          title: 'Voice unavailable',
+          detail: 'This translation could not be spoken on this device.',
+        });
+      }
     } finally {
       setSpeaking(false);
     }
@@ -159,7 +175,7 @@ export function TranslateScreen() {
       setSpeaking(false);
       return;
     }
-    if (output) void playOutput(output);
+    if (output) void playOutput(output, false);
   };
 
   const swap = () => {
@@ -261,25 +277,31 @@ export function TranslateScreen() {
 
           {errorNotice ? (
             <Notice
-              tone="error"
+              tone={errorNotice.tone ?? 'error'}
               title={errorNotice.title}
               detail={errorNotice.detail}
-              onRetry={input.trim() ? () => void runTranslate(input, false) : undefined}
+              onRetry={
+                (errorNotice.tone ?? 'error') === 'error' && input.trim()
+                  ? () => void runTranslate(input, false)
+                  : undefined
+              }
               onDismiss={() => setErrorNotice(null)}
             />
           ) : null}
 
           <View style={styles.outputHeader}>
             <SectionLabel style={styles.noMargin}>{toLang.label}</SectionLabel>
-            <TouchableOpacity
-              style={styles.autoToggle}
-              activeOpacity={0.7}
-              onPress={() => setAutoPlay((v) => !v)}
-            >
-              <Text style={[styles.autoToggleText, autoPlay && { color: ACCENT }]}>
-                {autoPlay ? '🔊 Auto-play on' : '🔇 Auto-play off'}
-              </Text>
-            </TouchableOpacity>
+            {canSpeakTarget ? (
+              <TouchableOpacity
+                style={styles.autoToggle}
+                activeOpacity={0.7}
+                onPress={() => setAutoPlay((v) => !v)}
+              >
+                <Text style={[styles.autoToggleText, autoPlay && { color: ACCENT }]}>
+                  {autoPlay ? '🔊 Auto-play on' : '🔇 Auto-play off'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <Card style={[styles.outputCard, !!output && glow(ACCENT, 0.25)]}>
@@ -288,24 +310,19 @@ export function TranslateScreen() {
                 <Text selectable style={styles.output}>
                   {output}
                 </Text>
-                <TouchableOpacity
-                  onPress={onListen}
-                  disabled={!canSpeakTarget}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.listen,
-                    speaking && styles.listenActive,
-                    !canSpeakTarget && styles.listenDisabled,
-                  ]}
-                >
-                  <Text style={[styles.listenText, speaking && styles.listenTextActive]}>
-                    {!canSpeakTarget
-                      ? `🔇 Voice not available for ${toLang.label}`
-                      : speaking
-                        ? '⏹ Stop'
-                        : '🔊 Listen'}
-                  </Text>
-                </TouchableOpacity>
+                {canSpeakTarget ? (
+                  <TouchableOpacity
+                    onPress={onListen}
+                    activeOpacity={0.8}
+                    style={[styles.listen, speaking && styles.listenActive]}
+                  >
+                    <Text style={[styles.listenText, speaking && styles.listenTextActive]}>
+                      {speaking ? '⏹ Stop' : '🔊 Listen'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.voiceNote}>🔇 Voice output: English & Spanish only</Text>
+                )}
               </>
             ) : (
               <Text style={styles.outputPlaceholder}>
@@ -453,7 +470,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   listenActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  listenDisabled: { backgroundColor: 'transparent', borderColor: 'transparent' },
   listenText: { ...typography.caption, color: colors.primary, fontWeight: '800' },
   listenTextActive: { color: colors.black },
+  voiceNote: { ...typography.caption, color: colors.textFaint, marginTop: spacing.lg },
 });
