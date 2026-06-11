@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -20,10 +20,15 @@ import { getLanguage, type Language } from '../data/languages';
 import { translateText } from '../qvac/translate';
 import { transcribeAudio } from '../qvac/transcribe';
 import { isSpeaking, isTtsLanguage, speak, stopSpeaking } from '../qvac/tts';
+import {
+  ensureTranscribeModel,
+  ensureTranslationModel,
+  ensureTtsModel,
+} from '../qvac/ModelManager';
 import { logEvent } from '../qvac/telemetry';
-import { useModelLoader } from '../hooks/useModelLoader';
+import { useDownloadProgress } from '../hooks/useModelLoader';
 import { colors, glow, radius, spacing, typography } from '../theme';
-import { Button, Card, ModelLoadingOverlay, Notice, SectionLabel } from '../components/ui';
+import { Button, Card, Notice, ProgressBar, SectionLabel } from '../components/ui';
 import { PerfChip } from '../components/PerfChip';
 import { LanguageChip, LanguagePicker } from '../components/LanguagePicker';
 import { PrivacyFooter } from '../components/PrivacyFooter';
@@ -50,14 +55,27 @@ export function TranslateScreen() {
   } | null>(null);
   const [prepareOpen, setPrepareOpen] = useState(false);
 
-  const { state: loadState, begin, end, onProgress } = useModelLoader();
+  const { state: download, onProgress, reset: resetDownload } = useDownloadProgress();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordingRef = useRef(false);
   const autoStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const recording = voiceStage === 'listening';
   const transcribing = voiceStage === 'transcribing';
-  const busy = translating || transcribing;
+
+  // Pre-warm the models for the selected pair the moment it's chosen, so the
+  // load/download happens while the user is still typing — by the time they
+  // hit Translate (or Speak) the engine is already resident. Deduped by
+  // ModelManager, so a user action mid-warm just joins the same load.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void ensureTranslationModel(from, to, onProgress).catch(() => {});
+      void ensureTranscribeModel(onProgress).catch(() => {});
+      if (isTtsLanguage(to)) void ensureTtsModel(to, onProgress).catch(() => {});
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to]);
 
   const fail = (title: string, error: unknown) => {
     const detail = String((error as Error)?.message ?? error);
@@ -73,7 +91,6 @@ export function TranslateScreen() {
     setTranslating(true);
     setOutput('');
     setErrorNotice(null);
-    begin();
     try {
       const result = await translateText({
         text: trimmed,
@@ -91,13 +108,13 @@ export function TranslateScreen() {
     } catch (error) {
       fail('Translation failed', error);
     } finally {
-      end();
+      resetDownload();
       setTranslating(false);
     }
   };
 
   const startRecording = async () => {
-    if (busy || recording) return;
+    if (translating || transcribing || recording) return;
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Microphone needed', 'Enable microphone access to dictate text.');
@@ -123,7 +140,6 @@ export function TranslateScreen() {
       autoStopTimer.current = null;
     }
     setVoiceStage('transcribing');
-    begin();
     let transcript = '';
     try {
       await recorder.stop();
@@ -138,7 +154,7 @@ export function TranslateScreen() {
     } catch (error) {
       fail('Transcription failed', error);
     } finally {
-      end();
+      resetDownload();
       setVoiceStage('idle');
     }
     // One-gesture voice-to-voice: speak → transcribe → translate → speak.
@@ -228,6 +244,16 @@ export function TranslateScreen() {
             </TouchableOpacity>
             <LanguageChip code={to} accent={ACCENT} onPress={() => setPicker('to')} />
           </Card>
+
+          {download.visible ? (
+            <View style={styles.downloadBar}>
+              <Text style={styles.downloadText} numberOfLines={1}>
+                ⬇️ Getting language pack… {Math.round(download.percentage)}%
+                {download.detail ? `  ·  ${download.detail}` : ''}
+              </Text>
+              <ProgressBar value={download.percentage} color={ACCENT} />
+            </View>
+          ) : null}
 
           <SectionLabel>{getLanguage(from).label}</SectionLabel>
           <Card style={[styles.inputCard, recording && glow(colors.danger, 0.5)]}>
@@ -352,15 +378,6 @@ export function TranslateScreen() {
         onClose={() => setPrepareOpen(false)}
         accent={ACCENT}
       />
-
-      <ModelLoadingOverlay
-        visible={loadState.active && busy}
-        title={transcribing ? 'Loading speech model' : 'Loading translation model'}
-        subtitle="First time only — it is cached on your device afterwards."
-        percentage={loadState.percentage}
-        detail={loadState.detail}
-        accent={ACCENT}
-      />
     </View>
   );
 }
@@ -414,6 +431,16 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
   },
   swapIcon: { fontSize: 20, color: ACCENT, fontWeight: '800' },
+  downloadBar: {
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  downloadText: { ...typography.caption, color: colors.text, fontWeight: '600' },
   inputCard: { minHeight: 150 },
   input: {
     ...typography.body,
