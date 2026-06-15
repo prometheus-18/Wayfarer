@@ -7,7 +7,7 @@
  * speak → Whisper → Bergamot → Supertonic.
  */
 import { textToSpeech as qvacTextToSpeech } from '@qvac/sdk';
-import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { ensureTtsModel, type ProgressListener } from './ModelManager';
 import { enqueue } from './queue';
@@ -158,9 +158,8 @@ export async function speak(
   const cleaned = sanitizeText(text, MAX_SPEAK_CHARS);
   if (!cleaned) return;
 
-  const modelId = await ensureTtsModel(language, onProgress);
-
   const startedAt = Date.now();
+  const modelId = await ensureTtsModel(language, onProgress);
   // The TTS engine replaces an in-flight job when a new one arrives, so
   // concurrent utterances are serialized through a FIFO queue.
   const samples = await enqueue('tts', () =>
@@ -185,6 +184,15 @@ export async function speak(
   const clip = new File(Paths.cache, `${CLIP_PREFIX}${Date.now()}.wav`);
   clip.write(pcmToWav(samples, SAMPLE_RATE));
   cleanupOldClips(clip.uri);
+
+  // Switch the audio session out of record mode before playback. If the mic
+  // recorder left the session in record/communication mode, playback comes out
+  // garbled ("blabber"). Force playback mode for a clean render.
+  try {
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+  } catch {
+    // best-effort
+  }
 
   try {
     await playWav(clip.uri);

@@ -168,20 +168,62 @@ export function ensureTranslationModel(
   );
 }
 
-/** Load (or reuse) the multilingual Whisper model for voice → text. */
-export function ensureTranscribeModel(onProgress?: ProgressListener): Promise<string> {
-  return ensure(
-    'whisper:base',
-    'transcribe',
-    (op) =>
-      loadModel({
-        modelSrc: TRANSCRIBE_MODEL,
-        modelType: 'whispercpp-transcription',
-        modelConfig: {},
-        onProgress: op,
-      } as unknown as LoadModelOptions),
-    onProgress,
-  );
+// Whisper is loaded with an EXPLICIT spoken-language code so it transcribes in
+// that language's script (e.g. 'hi' → Devanagari). 'auto' is NOT used — it
+// returns empty transcripts on this QVAC build (verified on-device). The worker
+// reuses a model by modelSrc, so to actually change the language we unload the
+// previous instance first.
+let whisperModelId: string | null = null;
+let whisperLang: string | null = null;
+let whisperInflight: Promise<string> | null = null;
+let whisperInflightLang: string | null = null;
+
+// Whisper-small still leans toward Latin/Urdu for some non-Latin languages; a
+// short script sample as initial_prompt biases the decoder to the right script.
+const SCRIPT_HINT_PROMPTS: Record<string, string> = {
+  hi: 'नमस्ते। यह एक हिन्दी बातचीत है।',
+};
+
+/** Load (or reuse) Whisper for a specific spoken language (ISO code). */
+export function ensureTranscribeModel(
+  language = 'en',
+  onProgress?: ProgressListener,
+): Promise<string> {
+  if (whisperModelId && whisperLang === language) return Promise.resolve(whisperModelId);
+  if (whisperInflight && whisperInflightLang === language) return whisperInflight;
+
+  whisperInflightLang = language;
+  whisperInflight = (async () => {
+    // Drop any model loaded for a different language so the new one applies.
+    if (whisperModelId) {
+      console.log('[STT] unloading old whisper before lang switch');
+      try {
+        await unloadModel({ modelId: whisperModelId });
+      } catch {
+        // best-effort
+      }
+      whisperModelId = null;
+      whisperLang = null;
+    }
+    console.log('[STT] loadModel whisper lang=', language);
+    const startedAt = Date.now();
+    const hint = SCRIPT_HINT_PROMPTS[language];
+    const id = await loadModel({
+      modelSrc: TRANSCRIBE_MODEL,
+      modelType: 'whispercpp-transcription',
+      modelConfig: { language, translate: false, ...(hint ? { initial_prompt: hint } : {}) },
+      onProgress,
+    } as unknown as LoadModelOptions);
+    console.log('[STT] loadModel done id=', id);
+    whisperModelId = id;
+    whisperLang = language;
+    logEvent({ kind: 'model_load', model: `whisper:${language}`, totalMs: Date.now() - startedAt });
+    return id;
+  })();
+  return whisperInflight.finally(() => {
+    whisperInflight = null;
+    whisperInflightLang = null;
+  });
 }
 
 /** Load (or reuse) the ONNX OCR pipeline (Latin recognizer + CRAFT detector). */
@@ -238,14 +280,31 @@ export function ensureTtsModel(
 ): Promise<string> {
   // One fast English-only variant; everything else uses the multilingual one.
   const descriptor = language === 'en' ? TTS_MODELS.en : TTS_MODELS.multilingual;
+  // TEMP: confirm the .src fix is actually in the running bundle (not stale).
+  console.log('[TTS-LOAD]', JSON.stringify({ language, modelSrcType: typeof descriptor.src, modelSrc: descriptor.src }));
   return ensure(
     `tts:${language}`,
     'tts',
     (op) =>
       loadModel({
-        modelSrc: descriptor,
+        // Pass the raw `src` string, not the descriptor object: a descriptor
+        // with a literal `engine` narrows modelConfig to that engine's strict
+        // schema and rejects voice/outputSampleRate/etc. The string keeps
+        // modelConfig permissive (matches the SDK supertonic example).
+        modelSrc: descriptor.src,
         modelType: 'tts-ggml',
-        modelConfig: { ttsEngine: 'supertonic', language },
+        // Supertonic needs a speaker `voice` (e.g. "F1"); without it the engine
+        // emits garbled babble. Match the SDK's supertonic example config.
+        // Exactly the keys the SDK's supertonic load schema accepts. `voice` is
+        // the missing piece that caused babble; `outputSampleRate` is NOT a
+        // valid load-config key (strict schema rejects it).
+        modelConfig: {
+          ttsEngine: 'supertonic',
+          language,
+          voice: 'F1',
+          ttsSpeed: 1.05,
+          ttsNumInferenceSteps: 5,
+        },
         onProgress: op,
       } as unknown as LoadModelOptions),
     onProgress,

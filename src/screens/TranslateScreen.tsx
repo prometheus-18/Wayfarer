@@ -70,7 +70,7 @@ export function TranslateScreen() {
   useEffect(() => {
     const timer = setTimeout(() => {
       void ensureTranslationModel(from, to, onProgress).catch(() => {});
-      void ensureTranscribeModel(onProgress).catch(() => {});
+      void ensureTranscribeModel(from, onProgress).catch(() => {});
       if (isTtsLanguage(to)) void ensureTtsModel(to, onProgress).catch(() => {});
     }, 600);
     return () => clearTimeout(timer);
@@ -123,7 +123,18 @@ export function TranslateScreen() {
     stopSpeaking();
     setSpeaking(false);
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    await recorder.prepareToRecordAsync();
+    // prepareToRecordAsync throws if the recorder is still prepared from a
+    // prior session (e.g. an aborted record). Reset, then prepare.
+    try {
+      await recorder.prepareToRecordAsync();
+    } catch {
+      try {
+        await recorder.stop();
+      } catch {
+        // ignore
+      }
+      await recorder.prepareToRecordAsync();
+    }
     recorder.record();
     recordingRef.current = true;
     setVoiceStage('listening');

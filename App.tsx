@@ -1,45 +1,15 @@
-import React, { useState } from 'react';
-import { SafeAreaView, StatusBar as RNStatusBar, StyleSheet, View } from 'react-native';
+import React from 'react';
+import { SafeAreaView, StatusBar as RNStatusBar, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { colors } from './src/theme';
-import { TabBar, type TabKey } from './src/components/TabBar';
-import { TranslateScreen } from './src/screens/TranslateScreen';
-import { ScanScreen } from './src/screens/ScanScreen';
-import { AssistantScreen } from './src/screens/AssistantScreen';
-import { useAutoBenchmark } from './src/dev/autobench';
+import { VoiceInterpreterScreen } from './src/screens/VoiceInterpreterScreen';
 
 export default function App() {
-  const [active, setActive] = useState<TabKey>('translate');
-  useAutoBenchmark();
-
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
-      <View style={styles.body}>
-        {/* All screens stay mounted so their state (chat, translations) persists. */}
-        <Pane visible={active === 'translate'}>
-          <TranslateScreen />
-        </Pane>
-        <Pane visible={active === 'scan'}>
-          <ScanScreen />
-        </Pane>
-        <Pane visible={active === 'assistant'}>
-          <AssistantScreen />
-        </Pane>
-      </View>
-      <TabBar active={active} onChange={setActive} />
+      <VoiceInterpreterScreen />
     </SafeAreaView>
-  );
-}
-
-function Pane({ visible, children }: { visible: boolean; children: React.ReactNode }) {
-  return (
-    <View
-      style={[StyleSheet.absoluteFill, !visible && styles.hidden]}
-      pointerEvents={visible ? 'auto' : 'none'}
-    >
-      {children}
-    </View>
   );
 }
 
@@ -49,6 +19,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     paddingTop: RNStatusBar.currentHeight ?? 0,
   },
-  body: { flex: 1 },
-  hidden: { opacity: 0 },
 });
