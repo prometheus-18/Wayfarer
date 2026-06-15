@@ -69,7 +69,6 @@ export const TARGET_LANGUAGES: Language[] = [
   { code: 'ml', label: 'Malayalam', flag: '🇮🇳', native: 'മലയാളം' },
   { code: 'ms', label: 'Malay', flag: '🇲🇾', native: 'Bahasa Melayu' },
   { code: 'nb', label: 'Norwegian (Bokmål)', flag: '🇳🇴', native: 'Norsk bokmål' },
-  { code: 'no', label: 'Norwegian', flag: '🇳🇴', native: 'Norsk' },
   { code: 'pl', label: 'Polish', flag: '🇵🇱', native: 'Polski' },
   { code: 'ro', label: 'Romanian', flag: '🇷🇴', native: 'Română' },
   { code: 'sr', label: 'Serbian', flag: '🇷🇸', native: 'Српски' },

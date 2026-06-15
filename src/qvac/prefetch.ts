@@ -46,8 +46,14 @@ function translationAssets(): Asset[] {
   // Both directions for every supported language (English-pivot covers the rest).
   for (const lang of ALL_LANGUAGES) {
     if (lang.code === 'en') continue;
-    assets.push({ label: `${lang.label} → English`, src: bergamotDescriptor(lang.code, 'en') });
-    assets.push({ label: `English → ${lang.label}`, src: bergamotDescriptor('en', lang.code) });
+    // Defend each pair: one unshipped descriptor must not throw out of here and
+    // crash the prepare-offline sheet render / abort the whole bulk download.
+    try {
+      assets.push({ label: `${lang.label} → English`, src: bergamotDescriptor(lang.code, 'en') });
+      assets.push({ label: `English → ${lang.label}`, src: bergamotDescriptor('en', lang.code) });
+    } catch {
+      // skip a language whose Bergamot pair isn't in this SDK build
+    }
   }
   return assets;
 }

@@ -25,7 +25,11 @@ import { logEvent } from './telemetry';
 export type ProgressListener = (progress: ModelProgressUpdate) => void;
 
 type Group = 'translate' | 'ocr' | 'assistant' | 'transcribe' | 'tts' | 'embed';
-const HEAVY_GROUPS: Group[] = ['ocr', 'assistant'];
+// 'embed' is heavy-exclusive too: the RAG phrasebook loads EmbeddingGemma
+// (~278MB) while the ~900MB assistant VLM is resident, and holding both has
+// OOM-aborted the VLM alloc on 8GB devices. Loading embed now evicts the VLM
+// (which COMPOSE re-loads), so the two are never co-resident.
+const HEAVY_GROUPS: Group[] = ['ocr', 'assistant', 'embed'];
 /**
  * Translation pairs are tiny (~35 MB) but a long session pivoting across many
  * languages accumulates them in worker RAM. Keep only the most-recently-used

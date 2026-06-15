@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -23,7 +23,7 @@ import { PrivacyFooter } from '../components/PrivacyFooter';
 
 const ACCENT = colors.scan;
 
-export function ScanScreen() {
+export function ScanScreen({ active = true }: { active?: boolean }) {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [recognized, setRecognized] = useState('');
   const [output, setOutput] = useState('');
@@ -35,6 +35,14 @@ export function ScanScreen() {
   const [lastUri, setLastUri] = useState<string | null>(null);
 
   const { state: loadState, begin, end, onProgress } = useModelLoader();
+
+  // All screens stay mounted; when this tab is hidden (or unmounts) stop any
+  // Listen playback so it can't hold the shared audio session and garble the
+  // Voice tab's next turn.
+  useEffect(() => {
+    if (!active) stopSpeaking();
+  }, [active]);
+  useEffect(() => () => stopSpeaking(), []);
 
   const fail = (title: string, error: unknown) => {
     const detail = String((error as Error)?.message ?? error);
@@ -208,7 +216,10 @@ export function ScanScreen() {
                           return;
                         }
                         try {
-                          await speak(output, to, onProgress);
+                          // No onProgress here: a cold TTS download must not
+                          // flip the full-screen overlay on with no begin/end
+                          // to dismiss it (it would stick forever).
+                          await speak(output, to);
                         } catch (error) {
                           fail('Speech failed', error);
                         }

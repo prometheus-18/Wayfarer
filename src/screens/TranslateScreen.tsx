@@ -73,9 +73,14 @@ export function TranslateScreen({ active = true }: { active?: boolean }) {
     // hidden tab would unload the model the active tab is using.
     if (!active) return;
     const timer = setTimeout(() => {
-      void ensureTranslationModel(from, to, onProgress).catch(() => {});
-      void ensureTranscribeModel(from, onProgress).catch(() => {});
-      if (isTtsLanguage(to)) void ensureTtsModel(to, onProgress).catch(() => {});
+      // Reset the download bar once the pre-warm settles, otherwise a language
+      // change that triggered a real download leaves a stuck progress bar when
+      // the user never presses Translate.
+      void Promise.allSettled([
+        ensureTranslationModel(from, to, onProgress),
+        ensureTranscribeModel(from, onProgress),
+        isTtsLanguage(to) ? ensureTtsModel(to, onProgress) : Promise.resolve(),
+      ]).then(() => resetDownload());
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,10 +234,13 @@ export function TranslateScreen({ active = true }: { active?: boolean }) {
   };
 
   const swap = () => {
+    // Carry the translation up to the input for a round-trip, but clear the
+    // output: the old input was never a translation for the new direction, so
+    // it must not be shown (or spoken via Listen) under the new target label.
     setFrom(to);
     setTo(from);
     setInput(output || input);
-    setOutput(input && output ? input : '');
+    setOutput('');
   };
 
   const onPickLanguage = (language: Language) => {

@@ -23,7 +23,7 @@ export default function App() {
           <TranslateScreen active={active === 'translate'} />
         </Pane>
         <Pane visible={active === 'scan'}>
-          <ScanScreen />
+          <ScanScreen active={active === 'scan'} />
         </Pane>
         <Pane visible={active === 'assistant'}>
           <AssistantScreen />

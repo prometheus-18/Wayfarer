@@ -13,9 +13,9 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { type ChatRole } from '../qvac/assistant';
 import { runAgent, type AgentTraceStep } from '../qvac/agent';
-import { useModelLoader } from '../hooks/useModelLoader';
+import { useDownloadProgress } from '../hooks/useModelLoader';
 import { colors, radius, spacing, typography } from '../theme';
-import { ModelLoadingOverlay } from '../components/ui';
+import { ProgressBar } from '../components/ui';
 import { hexWithAlpha } from '../components/ui';
 import { PerfChip } from '../components/PerfChip';
 
@@ -46,7 +46,7 @@ export function AssistantScreen() {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  const { state: loadState, begin, end, onProgress } = useModelLoader();
+  const { state: download, onProgress, reset: resetDownload } = useDownloadProgress();
 
   const updateMessage = (id: string, patch: Partial<Message>) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
@@ -78,23 +78,22 @@ export function AssistantScreen() {
       content: text,
       imageUri: attached ?? undefined,
     };
-    const priorTurns = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-      imageUri: m.imageUri,
-    }));
+    // Drop empty/failed prior assistant turns so a wedged turn can't poison the
+    // replayed history (empty turns also waste the small VLM's context).
+    const priorTurns = messages
+      .filter((m) => m.role === 'user' || m.content.trim())
+      .map((m) => ({ role: m.role, content: m.content }));
     const assistantId = nextId();
 
     setMessages((prev) => [...prev, userMessage, { id: assistantId, role: 'assistant', content: '' }]);
     setInput('');
     setAttached(null);
     setSending(true);
-    begin();
     scrollToEnd();
 
     try {
-      await runAgent({
-        history: priorTurns.map(({ role, content }) => ({ role, content })),
+      const { reply } = await runAgent({
+        history: priorTurns,
         prompt: text || 'Describe this image for a traveler and translate any text in it.',
         imageUri: userMessage.imageUri,
         onProgress,
@@ -107,10 +106,13 @@ export function AssistantScreen() {
           scrollToEnd();
         },
       });
+      // Reconcile with the canonical trimmed reply so the bubble is never left
+      // on the streamed partial (and runAgent's empty-fallback always lands).
+      if (reply) updateMessage(assistantId, { content: reply });
     } catch (error) {
       updateMessage(assistantId, { content: `⚠️ ${String((error as Error)?.message ?? error)}` });
     } finally {
-      end();
+      resetDownload();
       setSending(false);
     }
   };
@@ -172,6 +174,16 @@ export function AssistantScreen() {
           </View>
         ) : null}
 
+        {download.visible ? (
+          <View style={styles.downloadBar}>
+            <Text style={styles.downloadText}>
+              Loading on-device assistant… {Math.round(download.percentage)}%
+              {download.detail ? `  ·  ${download.detail}` : ''}
+            </Text>
+            <ProgressBar value={download.percentage} color={ACCENT} />
+          </View>
+        ) : null}
+
         <View style={styles.perfRow}>
           <PerfChip kinds={['assistant', 'agent_tool', 'rag', 'model_load']} accent={ACCENT} />
         </View>
@@ -200,15 +212,6 @@ export function AssistantScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-
-      <ModelLoadingOverlay
-        visible={loadState.active}
-        title="Loading on-device assistant"
-        subtitle="The vision model is large — downloaded once, then fully offline."
-        percentage={loadState.percentage}
-        detail={loadState.detail}
-        accent={ACCENT}
-      />
     </View>
   );
 }
@@ -313,6 +316,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   perfRow: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xs },
+  downloadBar: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  downloadText: { ...typography.caption, color: colors.textMuted },
   trace: {
     gap: 3,
     marginBottom: spacing.sm,

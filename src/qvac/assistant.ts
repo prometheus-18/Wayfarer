@@ -84,6 +84,9 @@ export async function askAssistant(opts: AskOptions): Promise<string> {
         opts.onToken?.(reply);
       } else if (event.type === 'completionStats') {
         stats = event.stats;
+      } else if (event.type === 'completionDone' && event.stopReason === 'error') {
+        // Worker-side failures arrive as a terminal event, not a rejection.
+        throw new Error(event.error.message);
       }
     }
   });

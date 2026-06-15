@@ -1,10 +1,10 @@
 /**
- * Wayfarer — live voice interpreter (single-screen app).
+ * Wayfarer — live voice interpreter.
  *
- * One-way auto-loop: tap the orb → speak → it auto-stops on silence (VAD) →
- * Whisper transcribes → langdetect picks your source language → Bergamot
- * translates to your chosen target → the translation is shown big (and spoken
- * aloud when on-device TTS is available) → it listens again for your next line.
+ * Tap the orb → speak → it auto-stops on silence (VAD) → Whisper transcribes in
+ * your selected source language → Bergamot translates to your chosen target →
+ * the translation is shown big and (when on-device TTS supports the target)
+ * spoken aloud. One-shot: tap again for the next phrase.
  *
  * Everything runs on-device. A live frequency spectrum reacts to your voice;
  * fireflies drift behind. Text is always shown as a fallback.
@@ -22,12 +22,13 @@ import { getLanguage, type Language } from '../data/languages';
 import { translateText } from '../qvac/translate';
 import { transcribePcm } from '../qvac/transcribe';
 import { ensureTranscribeModel } from '../qvac/ModelManager';
-import { stopSpeaking } from '../qvac/tts';
+import { isTtsLanguage, speak, stopSpeaking } from '../qvac/tts';
 import { logEvent } from '../qvac/telemetry';
 import { useDownloadProgress } from '../hooks/useModelLoader';
 import { colors, radius, spacing, typography } from '../theme';
 import { Notice, ProgressBar } from '../components/ui';
 import { LanguageChip, LanguagePicker } from '../components/LanguagePicker';
+import { PrepareOfflineSheet } from '../components/PrepareOfflineSheet';
 import { FirefliesBackground } from '../components/FirefliesBackground';
 import { VoiceSpectrum } from '../components/VoiceSpectrum';
 
@@ -57,6 +58,7 @@ export function VoiceInterpreterScreen({ active = true }: { active?: boolean }) 
   const [translation, setTranslation] = useState('');
   const [levels, setLevels] = useState<number[]>([]);
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
+  const [prepareOpen, setPrepareOpen] = useState(false);
   const [errorNotice, setErrorNotice] = useState<{ title: string; detail?: string } | null>(null);
 
   const { state: download, onProgress, reset: resetDownload } = useDownloadProgress();
@@ -207,6 +209,17 @@ export function VoiceInterpreterScreen({ active = true }: { active?: boolean }) 
           const result = await translateText({ text: said, from, to, onToken: setTranslation });
           setTranslation(result);
           logEvent({ kind: 'translate', model: `nmt:${from}-${to}`, prompt: said, extra: { source: 'voice-live' } });
+          // Voice-to-voice: speak the translation aloud. Supertonic only covers
+          // a couple of languages; when the target isn't one, the text still
+          // shows (the screen never goes silent without feedback).
+          if (result && isTtsLanguage(to)) {
+            setPhase('speaking');
+            try {
+              await speak(result, to, onProgress);
+            } catch {
+              // best-effort: the translation is already on screen
+            }
+          }
         } else {
           // Whisper returned nothing — tell the user instead of silently idling.
           setErrorNotice({ title: 'No speech detected', detail: 'Tap and speak a little louder.' });
@@ -217,7 +230,17 @@ export function VoiceInterpreterScreen({ active = true }: { active?: boolean }) 
         resetDownload();
       }
     } else {
+      resetDownload();
       setErrorNotice({ title: "Didn't catch that", detail: 'Tap the orb and speak a bit longer.' });
+    }
+
+    // Return the audio session to playback mode after every turn. speak() only
+    // does this for en/es targets; for any other target the session would
+    // otherwise stay in record mode and garble the next playback.
+    try {
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    } catch {
+      // best-effort
     }
 
     // Simple one-shot: show the translation and stop. The user taps again for
@@ -269,6 +292,9 @@ export function VoiceInterpreterScreen({ active = true }: { active?: boolean }) 
     setLevels([]);
     setPhase('idle');
     stopSpeaking();
+    // Release the global audio session from record mode so a hidden Voice tab
+    // doesn't leave the mic mode held for another screen's playback.
+    void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
   }, [active, stream]);
 
   const onToggle = async () => {
@@ -314,6 +340,9 @@ export function VoiceInterpreterScreen({ active = true }: { active?: boolean }) 
       <View style={styles.header}>
         <Text style={styles.title}>Wayfarer</Text>
         <Text style={styles.subtitle}>Offline AI Translator</Text>
+        <Pressable onPress={() => setPrepareOpen(true)} style={styles.prepareBtn} hitSlop={8}>
+          <Text style={styles.prepareText}>⬇️  Prepare offline</Text>
+        </Pressable>
       </View>
 
       {/* Language bar: you speak (source) → translate to (target) */}
@@ -391,6 +420,12 @@ export function VoiceInterpreterScreen({ active = true }: { active?: boolean }) 
         onSelect={onPickLanguage}
         onClose={() => setPicker(null)}
       />
+
+      <PrepareOfflineSheet
+        visible={prepareOpen}
+        onClose={() => setPrepareOpen(false)}
+        accent={ACCENT}
+      />
     </View>
   );
 }
@@ -406,6 +441,16 @@ const styles = StyleSheet.create({
   },
   title: { ...typography.display, color: colors.text, textAlign: 'center' },
   subtitle: { ...typography.body, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
+  prepareBtn: {
+    marginTop: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  prepareText: { ...typography.label, color: colors.textMuted },
   langBar: {
     flexDirection: 'row',
     alignItems: 'center',

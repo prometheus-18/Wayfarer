@@ -242,6 +242,10 @@ export async function runAgent(req: AgentRequest): Promise<{ reply: string; trac
         req.onToken?.(reply);
       } else if (event.type === 'completionStats') {
         stats = event.stats;
+      } else if (event.type === 'completionDone' && event.stopReason === 'error') {
+        // Worker-side generation failure arrives as a terminal event (not a
+        // thrown rejection); surface it so the bubble never hangs on "Thinking…".
+        throw new Error(event.error.message);
       }
     }
   });
@@ -257,5 +261,12 @@ export async function runAgent(req: AgentRequest): Promise<{ reply: string; trac
     extra: { via: 'agent', tool: decision.tool, routeMs },
   });
 
-  return { reply: reply.trim(), trace };
+  // A successful-but-empty generation (common on a small VLM after a malformed
+  // multimodal turn) would otherwise leave the bubble stuck on "Thinking…".
+  let finalReply = reply.trim();
+  if (!finalReply) {
+    finalReply = 'I couldn’t generate a reply — please try rephrasing.';
+    req.onToken?.(finalReply);
+  }
+  return { reply: finalReply, trace };
 }
