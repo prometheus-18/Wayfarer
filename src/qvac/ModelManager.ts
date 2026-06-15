@@ -19,6 +19,7 @@ import {
   EMBEDDING_MODEL,
 } from './models';
 import type { TtsLanguage } from './tts';
+import { enqueue } from './queue';
 import { logEvent } from './telemetry';
 
 export type ProgressListener = (progress: ModelProgressUpdate) => void;
@@ -193,10 +194,15 @@ export function ensureTranscribeModel(
   if (whisperInflight && whisperInflightLang === language) return whisperInflight;
 
   whisperInflightLang = language;
-  whisperInflight = (async () => {
+  // Run the unload+load on the SAME 'transcribe' FIFO as the decode, so a
+  // language switch can never tear down a model while a transcription is
+  // in-flight (both screens share this single Whisper slot).
+  whisperInflight = enqueue('transcribe', async () => {
+    // A queued load for this language may have already landed by the time this
+    // slot runs — reuse it instead of unloading and reloading needlessly.
+    if (whisperModelId && whisperLang === language) return whisperModelId;
     // Drop any model loaded for a different language so the new one applies.
     if (whisperModelId) {
-      console.log('[STT] unloading old whisper before lang switch');
       try {
         await unloadModel({ modelId: whisperModelId });
       } catch {
@@ -205,7 +211,6 @@ export function ensureTranscribeModel(
       whisperModelId = null;
       whisperLang = null;
     }
-    console.log('[STT] loadModel whisper lang=', language);
     const startedAt = Date.now();
     const hint = SCRIPT_HINT_PROMPTS[language];
     const id = await loadModel({
@@ -214,12 +219,11 @@ export function ensureTranscribeModel(
       modelConfig: { language, translate: false, ...(hint ? { initial_prompt: hint } : {}) },
       onProgress,
     } as unknown as LoadModelOptions);
-    console.log('[STT] loadModel done id=', id);
     whisperModelId = id;
     whisperLang = language;
     logEvent({ kind: 'model_load', model: `whisper:${language}`, totalMs: Date.now() - startedAt });
     return id;
-  })();
+  });
   return whisperInflight.finally(() => {
     whisperInflight = null;
     whisperInflightLang = null;
@@ -280,8 +284,6 @@ export function ensureTtsModel(
 ): Promise<string> {
   // One fast English-only variant; everything else uses the multilingual one.
   const descriptor = language === 'en' ? TTS_MODELS.en : TTS_MODELS.multilingual;
-  // TEMP: confirm the .src fix is actually in the running bundle (not stale).
-  console.log('[TTS-LOAD]', JSON.stringify({ language, modelSrcType: typeof descriptor.src, modelSrc: descriptor.src }));
   return ensure(
     `tts:${language}`,
     'tts',
@@ -333,7 +335,7 @@ export const ModelStatus = {
   isTranslationLoaded: (from: string, to: string) => isLoaded(`nmt:${from}-${to}`),
   isOcrLoaded: () => isLoaded('ocr:latin'),
   isAssistantLoaded: () => isLoaded('vlm:smolvlm2-500m'),
-  isTranscribeLoaded: () => isLoaded('whisper:base'),
+  isTranscribeLoaded: () => whisperModelId !== null,
 };
 
 /** Free everything (e.g. on a hard reset). */

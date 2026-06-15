@@ -49,7 +49,7 @@ const PHASE_LABEL: Record<Phase, string> = {
   speaking: 'Speaking…',
 };
 
-export function VoiceInterpreterScreen() {
+export function VoiceInterpreterScreen({ active = true }: { active?: boolean }) {
   const [fromLang, setFromLang] = useState('en'); // language you speak
   const [toLang, setToLang] = useState('es'); // language to translate into
   const [phase, setPhase] = useState<Phase>('idle');
@@ -191,7 +191,6 @@ export function VoiceInterpreterScreen() {
     pcmCountRef.current = 0;
 
     // Transcribe whenever we captured a usable amount of audio (~0.3s+).
-    console.log('[XLATE] capturedSamples=', total, 'sr=', sampleRateRef.current, 'sec=', (total / sampleRateRef.current).toFixed(2));
     if (total > sampleRateRef.current * 0.3) {
       const pcm = new Int16Array(total);
       let offset = 0;
@@ -203,11 +202,9 @@ export function VoiceInterpreterScreen() {
       const to = toLangRef.current;
       try {
         const said = await transcribePcm(pcm, sampleRateRef.current, from, onProgress);
-        console.log('[XLATE]', JSON.stringify({ said, from, to }));
         if (said) {
           setTranscript(said);
           const result = await translateText({ text: said, from, to, onToken: setTranslation });
-          console.log('[XLATE] result=', JSON.stringify(result));
           setTranslation(result);
           logEvent({ kind: 'translate', model: `nmt:${from}-${to}`, prompt: said, extra: { source: 'voice-live' } });
         } else {
@@ -215,7 +212,6 @@ export function VoiceInterpreterScreen() {
           setErrorNotice({ title: 'No speech detected', detail: 'Tap and speak a little louder.' });
         }
       } catch (error) {
-        console.log('[XLATE] ERROR=', String((error as Error)?.stack ?? (error as Error)?.message ?? error));
         setErrorNotice({ title: 'Could not process speech', detail: String((error as Error)?.message ?? error) });
       } finally {
         resetDownload();
@@ -250,6 +246,31 @@ export function VoiceInterpreterScreen() {
     };
   }, [stream]);
 
+  // Tabs never unmount (App keeps every screen mounted), so when this one is
+  // navigated away from we must release the mic ourselves: abandon any capture
+  // in progress (no background inference for a screen the user has left) and
+  // stop playback so the global audio session isn't held in record mode.
+  useEffect(() => {
+    if (active) return;
+    loopRef.current = false;
+    capturingRef.current = false;
+    finishingRef.current = false;
+    if (maxTimerRef.current) {
+      clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
+    try {
+      stream.stop();
+    } catch {
+      // already stopped
+    }
+    pcmChunksRef.current = [];
+    pcmCountRef.current = 0;
+    setLevels([]);
+    setPhase('idle');
+    stopSpeaking();
+  }, [active, stream]);
+
   const onToggle = async () => {
     // While listening, a tap ends the loop AND finalizes the current utterance
     // (transcribe + translate) — never discard what was said.
@@ -282,13 +303,13 @@ export function VoiceInterpreterScreen() {
     if (picker === 'to') setToLang(language.code);
   };
 
-  const active = phase !== 'idle';
+  const busy = phase !== 'idle';
   const target = getLanguage(toLang);
   const downloading = download.visible;
 
   return (
     <View style={styles.container}>
-      <FirefliesBackground accent={ACCENT} intensity={active ? 1 : 0.6} />
+      <FirefliesBackground accent={ACCENT} intensity={busy ? 1 : 0.6} />
 
       <View style={styles.header}>
         <Text style={styles.title}>Wayfarer</Text>
@@ -309,10 +330,10 @@ export function VoiceInterpreterScreen() {
       >
         {/* The orb: spectrum + tap target */}
         <Pressable onPress={onToggle} style={styles.orbWrap}>
-          <View style={[styles.orb, active && styles.orbActive]}>
+          <View style={[styles.orb, busy && styles.orbActive]}>
             <VoiceSpectrum levels={levels} color={ACCENT} active={phase === 'listening'} height={150} />
           </View>
-          <Text style={[styles.phaseLabel, active && styles.phaseLabelActive]}>
+          <Text style={[styles.phaseLabel, busy && styles.phaseLabelActive]}>
             {PHASE_LABEL[phase]}
           </Text>
           <Text style={styles.hint}>

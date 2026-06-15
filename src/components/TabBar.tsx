@@ -3,7 +3,7 @@ import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native
 import { colors, radius, shadow, spacing, typography } from '../theme';
 import { hexWithAlpha } from './ui';
 
-export type TabKey = 'translate' | 'scan' | 'assistant';
+export type TabKey = 'interpreter' | 'translate' | 'scan' | 'assistant';
 
 export interface TabItem {
   key: TabKey;
@@ -13,6 +13,7 @@ export interface TabItem {
 }
 
 export const TABS: TabItem[] = [
+  { key: 'interpreter', label: 'Voice', icon: '🎙️', accent: colors.translate },
   { key: 'translate', label: 'Translate', icon: '🗣️', accent: colors.translate },
   { key: 'scan', label: 'Scan', icon: '📷', accent: colors.scan },
   { key: 'assistant', label: 'Assistant', icon: '🧭', accent: colors.assistant },

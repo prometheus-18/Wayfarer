@@ -38,7 +38,7 @@ const ACCENT = colors.translate;
 
 type VoiceStage = 'idle' | 'listening' | 'transcribing';
 
-export function TranslateScreen() {
+export function TranslateScreen({ active = true }: { active?: boolean }) {
   const [from, setFrom] = useState('en');
   const [to, setTo] = useState('es');
   const [input, setInput] = useState('');
@@ -68,6 +68,10 @@ export function TranslateScreen() {
   // hit Translate (or Speak) the engine is already resident. Deduped by
   // ModelManager, so a user action mid-warm just joins the same load.
   useEffect(() => {
+    // Only pre-warm while this tab is active. Both this screen and the Voice
+    // Interpreter share the single Whisper language slot, so warming from a
+    // hidden tab would unload the model the active tab is using.
+    if (!active) return;
     const timer = setTimeout(() => {
       void ensureTranslationModel(from, to, onProgress).catch(() => {});
       void ensureTranscribeModel(from, onProgress).catch(() => {});
@@ -75,7 +79,25 @@ export function TranslateScreen() {
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to]);
+  }, [from, to, active]);
+
+  // Release the mic + stop playback when navigating away, so a hidden tab never
+  // holds the global audio session in record mode or keeps the recorder armed.
+  useEffect(() => {
+    if (active) return;
+    if (recordingRef.current) {
+      recordingRef.current = false;
+      if (autoStopTimer.current) {
+        clearTimeout(autoStopTimer.current);
+        autoStopTimer.current = null;
+      }
+      recorder.stop().catch(() => {});
+      setVoiceStage('idle');
+    }
+    stopSpeaking();
+    setSpeaking(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   const fail = (title: string, error: unknown) => {
     const detail = String((error as Error)?.message ?? error);
@@ -158,6 +180,7 @@ export function TranslateScreen() {
       if (!uri) throw new Error('Recording produced no audio file.');
       transcript = await transcribeAudio({
         audioUri: uri,
+        language: from,
         onProgress,
         onPartial: (partial) => setInput(partial),
       });
