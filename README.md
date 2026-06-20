@@ -10,7 +10,7 @@
 
 | | Feature | What it does | QVAC under the hood |
 |---|---|---|---|
-| 🗣️ | **Translate** | Offline neural translation across 16+ languages, streamed token-by-token. Non-English ↔ non-English pivots through English automatically. | `translate()` + Bergamot NMT models (`BERGAMOT_*`) |
+| 🗣️ | **Translate** | Offline neural translation across 49 languages, streamed token-by-token. Non-English ↔ non-English pivots through English automatically. | `translate()` + Bergamot NMT models (`BERGAMOT_*`) |
 | 🎙️ | **Voice in** | Tap **Speak**, talk in any supported language — Whisper transcribes it on-device straight into the translator. | `transcribe()` + `WHISPER_BASE_Q8_0` |
 | 🔊 | **Voice out** | Tap **Listen** and the phone speaks the translation aloud — full voice-to-voice translation (en/es/de/it). | `textToSpeech()` + Supertonic TTS |
 | 📷 | **Scan** | Snap or pick a photo → on-device OCR extracts the text → translate it into your language (or have it spoken). | `ocr()` + `OCR_LATIN_RECOGNIZER_1` & `OCR_CRAFT_DETECTOR` |
@@ -31,7 +31,7 @@
 └───────────────┬────────────────────────────────────────────────┘
                 │  service layer (src/qvac/*)
                 ▼
-   translateText()      scanImage()        askAssistant()
+   translateText()      scanImage()        runAgent()
                 \           |             /
                  ▼          ▼            ▼
         ┌───────────────────────────────────────┐
@@ -96,7 +96,10 @@ For iOS, swap step 3 for `npx expo run:ios --device`.
 | Feature | Model(s) | Approx. size |
 |---|---|---|
 | Translate | one Bergamot pair per direction | ~35 MB each |
+| Voice in (Whisper STT) | Whisper base | ~82 MB |
+| Voice out (Supertonic TTS) | Supertonic TTS | ~132 MB |
 | Scan | Latin recognizer + CRAFT detector | ~98 MB |
+| Phrasebook (RAG) | EmbeddingGemma-300M | ~278 MB |
 | Assistant | SmolVLM2-500M + vision projection | ~900 MB |
 
 ### Share it with a non-developer (APK)
@@ -105,12 +108,14 @@ To hand the app to someone who just wants to *use* it (a judge, a friend), build
 
 ```bash
 # Cloud build (easiest; needs a free Expo account) — produces a downloadable APK
-npx eas-cli build -p android --profile preview
+npx eas build -p android --profile preview
 
 # …or build locally without any cloud:
 npx expo prebuild --clean
 cd android && ./gradlew assembleRelease   # APK at android/app/build/outputs/apk/release/
 ```
+
+**Prebuilt APK:** download the latest signed release from the repo's [Releases](https://github.com/prometheus-18/Wayfarer/releases) page (added at submission), enable "install unknown apps", tap to install.
 
 Send them the APK; they enable "install unknown apps", tap it, and open **Wayfarer** — no dev tools needed. First run downloads the models over Wi-Fi, then it's offline forever.
 
@@ -139,7 +144,16 @@ wayfarer/
 │   │   ├── ModelManager.ts     #   load / cache / unload (RAM-safe)
 │   │   ├── translate.ts        #   translateText() with English-pivot routing
 │   │   ├── ocr.ts              #   scanImage()
-│   │   ├── assistant.ts        #   askAssistant() (text + image)
+│   │   ├── assistant.ts        #   askAssistant() (text + image, benchmark/simple-chat helper)
+│   │   ├── agent.ts            #   runAgent() — tool-calling agent (live Assistant)
+│   │   ├── rag.ts              #   phrasebook RAG (ingest / search)
+│   │   ├── tts.ts              #   speak() — voice out (Supertonic TTS)
+│   │   ├── transcribe.ts       #   transcribeAudio() — voice in (Whisper)
+│   │   ├── queue.ts            #   per-engine FIFO request serialization
+│   │   ├── security.ts         #   input sanitization + injection limits
+│   │   ├── telemetry.ts        #   on-device audit log
+│   │   ├── prefetch.ts         #   offline prepare (model prefetch)
+│   │   ├── stress.ts           #   20-case on-device benchmark
 │   │   └── image.ts            #   file:// → native path helper
 │   ├── components/             # Card, Button, LanguagePicker, TabBar, overlays…
 │   └── screens/                # TranslateScreen, ScanScreen, AssistantScreen

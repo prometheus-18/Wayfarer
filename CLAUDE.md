@@ -38,7 +38,7 @@ Layering — strictly one-directional:
 screens (UI state only) → src/qvac/* helpers → @qvac/sdk → Bare worker (native C++ inference via react-native-bare-kit)
 ```
 
-- **`src/qvac/` is the only layer that may import `@qvac/sdk`.** Screens call the app-level helpers: `translateText()`, `scanImage()`, `askAssistant()`, `transcribeAudio()`.
+- **`src/qvac/` is the only layer that may import `@qvac/sdk`.** Screens call the app-level helpers: `translateText()`, `scanImage()`, `runAgent()` (the live tool-calling agent), `transcribeAudio()`.
 - **Every model load goes through `ModelManager.ts`** — it caches by logical key, dedupes concurrent loads via an in-flight promise map, and enforces the RAM policy: translation models (~35 MB each) stay cached per direction; OCR (~98 MB) and the assistant VLM (~900 MB) are *heavy* and **mutually exclusive** (loading one unloads the other). Never call `loadModel` directly from a screen or new service without going through `ensure*`.
 - **`loadModel` needs more than the descriptor** (hard-won on-device fixes — don't regress):
   - Bergamot NMT: `modelType: 'nmtcpp-translation'` **and** `modelConfig: { engine: 'Bergamot', from, to }` — the descriptor alone carries no direction and the load silently misbehaves without it.

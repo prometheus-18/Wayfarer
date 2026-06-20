@@ -8,8 +8,8 @@
  * marker file so re-opens skip straight to search.
  */
 import { ragCloseWorkspace, ragIngest, ragSearch } from '@qvac/sdk';
-import { PHRASEBOOK_DOCUMENTS } from '../data/phrasebook';
-import { ensureEmbeddingModel, type ProgressListener } from './ModelManager';
+import { PHRASEBOOK_DOCUMENTS, PHRASEBOOK_VERSION } from '../data/phrasebook';
+import { ensureEmbeddingModel, unloadEmbeddingModel, type ProgressListener } from './ModelManager';
 import { enqueue } from './queue';
 import { sanitizeText } from './security';
 import { logEvent } from './telemetry';
@@ -24,8 +24,11 @@ export interface PhraseHit {
 
 const WORKSPACE = 'phrasebook';
 const EMBED_MODEL_LABEL = 'embed:gemma-300m';
-/** Bump the suffix to force a re-ingest after phrasebook content changes. */
-const MARKER_FILENAME = 'wayfarer-phrasebook-ingested-v1.json';
+/**
+ * Versioned by PHRASEBOOK_VERSION so bumping the corpus version invalidates the
+ * cached embeddings (a new marker filename forces a fresh ingest).
+ */
+const MARKER_FILENAME = `wayfarer-phrasebook-ingested-v${PHRASEBOOK_VERSION}.json`;
 const MAX_QUERY_CHARS = 300;
 
 /** Resolved embedding modelId, set once `ensurePhrasebookReady` succeeds. */
@@ -199,4 +202,18 @@ export async function closePhrasebook(): Promise<void> {
   } catch {
     // The workspace may simply never have been opened this session.
   }
+}
+
+/**
+ * Fully release the phrasebook's RAM: close the in-memory workspace AND unload
+ * the ~278 MB embedding model, then forget the cached modelId so the next
+ * search reloads cleanly. On-disk data (vectors + ingest marker) is untouched,
+ * so the reload is just the model load. Used by the agent to drop the embedder
+ * before composing with the resident VLM, so the two never sit in worker RAM
+ * together. Never throws.
+ */
+export async function releasePhrasebook(): Promise<void> {
+  await closePhrasebook();
+  await unloadEmbeddingModel();
+  embeddingModelId = null;
 }

@@ -2,6 +2,21 @@
 
 > Working submission notes for the **QVAC "Unleash Edge AI"** hackathon (build period June 1–21, 2026). Fill the `TODO` fields before submitting on DoraHacks.
 
+## 0. BUIDL form answers (paste-ready)
+
+> Copy these straight into the DoraHacks BUIDL form. (The form draft had a typo "Wayfare" — the correct name is **Wayfarer**.)
+
+- **BUIDL name:** Wayfarer
+- **One-liner:** A private, fully offline travel companion — translate, scan & translate signs/menus with the camera, and chat with a multimodal AI assistant, all on-device with zero cloud.
+- **Vision:** Travelers abroad face a language barrier exactly when connectivity is worst and most expensive — no signal, roaming fees, or unwillingness to send photos of passports, menus, and private conversations to a cloud service. Wayfarer removes the trade-off: real-time translation, camera OCR, voice-to-voice, and a multimodal travel assistant that all run 100% on the phone via Tether's QVAC SDK, with zero bytes leaving the device (verifiable in airplane mode). Privacy-first edge AI that works where the cloud cannot.
+- **Category:** AI / Robotics
+- **Is this BUIDL an AI Agent?:** Yes — the Assistant is a genuine tool-calling agent (grammar-constrained JSON-schema routing across translate / scan_image / phrasebook / answer, deterministic dispatch, a visible tool trace, every call audit-logged). See `src/qvac/agent.ts` and [`docs/APP_GUIDE.md`](docs/APP_GUIDE.md).
+- **GitHub:** https://github.com/prometheus-18/Wayfarer
+- **Project website:** (optional — leave blank or use the GitHub URL)
+- **Demo video:** _TODO — team records ≤5-min airplane-mode take; see [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) and paste the unlisted YouTube link here and at §5._
+- **Social links (≥1 required):** _TODO — team's X/LinkedIn/YouTube. Suggested build-in-public hashtags: #UnleashEdgeAI #QVAC #EdgeAI_
+- **Logo:** `assets/logo-480.png` (480×480, generated from `icon.png`)
+
 ## 1. Product
 
 **Name:** Wayfarer
@@ -26,7 +41,7 @@
 
 | Feature | QVAC API | Model(s) | Notes |
 |---|---|---|---|
-| **Translate** | `loadModel()` → `translate({ modelType: "nmtcpp-translation" })` (streaming) | `BERGAMOT_<A>_<B>` (Bergamot NMT) | 16+ languages; non-English↔non-English pivots through English (two NMT hops). |
+| **Translate** | `loadModel()` → `translate({ modelType: "nmtcpp-translation" })` (streaming) | `BERGAMOT_<A>_<B>` (Bergamot NMT) | 49 languages; non-English↔non-English pivots through English (two NMT hops). |
 | **Voice input (STT)** | `loadModel({ modelType: "whispercpp-transcription" })` → `transcribe()` | `WHISPER_BASE_Q8_0` (multilingual) | Mic → on-device Whisper → text, feeds Translate. |
 | **Voice output (TTS)** | `loadModel({ modelType: "tts-ggml" })` → `textToSpeech()` | `TTS_EN_SUPERTONIC_Q4_0` / `TTS_MULTILINGUAL_SUPERTONIC2_Q4_0` | Int16 PCM → WAV → played via expo-audio. **Voice-to-voice translation** (en/es/de/it out). |
 | **Scan (OCR)** | `loadModel({ modelType: "onnx-ocr", modelConfig: { detectorModelSrc } })` → `ocr()` | `OCR_LATIN_RECOGNIZER_1` + `OCR_CRAFT_DETECTOR` (ONNX Runtime) | Returns text blocks with bounding boxes + confidence; output feeds Translate/TTS. |
@@ -55,7 +70,7 @@ npm install
 npx expo prebuild --clean
 npx expo run:android --device     # or: npx expo run:ios --device
 ```
-First use of each feature downloads its model over Wi-Fi (Translate ~35 MB · Scan ~98 MB · Assistant ~900 MB); afterwards the app runs fully offline (demo it in airplane mode).
+First use of each feature downloads its model over Wi-Fi (Translate ~35 MB · Whisper ~82 MB · TTS ~132 MB · Scan ~98 MB · RAG ~278 MB · Assistant ~900 MB); afterwards the app runs fully offline (demo it in airplane mode).
 
 **Shareable APK (for judges to sideload):** `eas build -p android --profile preview` (see `eas.json`), or a local `cd android && ./gradlew assembleRelease`.
 
@@ -71,7 +86,7 @@ First use of each feature downloads its model over Wi-Fi (Translate ~35 MB · Sc
 ## 6. Why it should win (mapping to judging criteria)
 
 - **Innovation / UX:** beautiful, daily-use travel app; camera→OCR→translate chain; multimodal photo Q&A — all offline.
-- **QVAC usage & coverage:** three distinct QVAC modalities (NMT, OCR/ONNX, multimodal VLM) + streaming + lifecycle management.
+- **QVAC usage & coverage:** **seven** distinct QVAC modalities — NMT translation (streaming), Whisper STT, Supertonic TTS, ONNX OCR, SmolVLM2 multimodal VLM, grammar-constrained tool-calling Agent, and EmbeddingGemma RAG — plus streaming + lifecycle management.
 - **Performance:** lightweight models chosen for phones; one-heavy-model-at-a-time memory policy; TTFT/TPS captured in the audit log.
 - **Originality — security:** explicit prompt-injection resistance (read-don't-obey image text), input sanitization, on-device privacy. See [`SECURITY.md`](SECURITY.md).
 - **Artifact quality:** structured remote-API manifest + exportable performance log + reproducible build.

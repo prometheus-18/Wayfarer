@@ -40,6 +40,7 @@ export function BenchmarkSheet({
 }) {
   const [withOcr, setWithOcr] = useState(false);
   const [withAssistant, setWithAssistant] = useState(false);
+  const [withVoice, setWithVoice] = useState(false);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<CaseResult[]>([]);
   const [report, setReport] = useState<StressReport | null>(null);
@@ -50,6 +51,7 @@ export function BenchmarkSheet({
     'translate',
     ...(withOcr ? (['ocr'] as const) : []),
     ...(withAssistant ? (['assistant'] as const) : []),
+    ...(withVoice ? (['voice'] as const) : []),
   ];
 
   const run = useCallback(async () => {
@@ -68,7 +70,7 @@ export function BenchmarkSheet({
       setRunning(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, withOcr, withAssistant]);
+  }, [running, withOcr, withAssistant, withVoice]);
 
   const exportReport = async () => {
     if (!report) return;
@@ -92,7 +94,8 @@ export function BenchmarkSheet({
           </View>
           <Text style={styles.body}>
             A scripted stress suite that exercises translation routing, heavy inputs, concurrency,
-            OCR, the assistant and prompt-injection defenses — all on this phone.
+            OCR, the assistant, voice &amp; phrasebook retrieval, and prompt-injection defenses — all
+            on this phone.
           </Text>
 
           <View style={styles.toggleRow}>
@@ -102,6 +105,12 @@ export function BenchmarkSheet({
           <View style={styles.toggleRow}>
             <Text style={styles.toggleLabel}>Assistant cases (~{formatBytes(SIZES.assistant)})</Text>
             <Switch value={withAssistant} onValueChange={setWithAssistant} disabled={running} />
+          </View>
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>
+              Voice &amp; phrasebook (~{formatBytes(SIZES.tts + SIZES.embedding)})
+            </Text>
+            <Switch value={withVoice} onValueChange={setWithVoice} disabled={running} />
           </View>
 
           {loadState.active ? (

@@ -12,7 +12,7 @@ What's inside the app, how each feature works, and what happens under the hood. 
 
 Type or **speak** ("Speak" button → Whisper transcribes on-device, auto-detecting the language), pick a language pair, hit Translate.
 
-- **16+ languages.** Bergamot neural translation models, one ~35 MB model per direction, downloaded on first use and cached forever.
+- **49 languages.** Bergamot neural translation models, one ~35 MB model per direction, downloaded on first use and cached forever.
 - **English pivot:** French → Spanish actually runs French → English → Spanish (two model hops) automatically — watch the perf chip report both.
 - **Streaming:** tokens appear as they're generated.
 - **Listen 🔊:** for English/Spanish/German/Italian targets, the phone speaks the translation aloud (Supertonic TTS, synthesized on-device to a WAV and played). Combined with Speak, that's **voice-to-voice translation with no cloud**.
@@ -30,7 +30,7 @@ Failures surface as an inline notice with a Retry button (and land in the audit 
 
 ### 🧭 Assistant — the Wayfarer Agent
 
-A multimodal travel companion (SmolVLM2-500M vision-language model, ~900 MB) that **orchestrates tools** instead of just chatting:
+A multimodal travel companion (SmolVLM2-500M vision-language model, ~900 MB) that **orchestrates tools** instead of just chatting. The live Assistant screen runs the tool-calling agent via `runAgent()` (`src/qvac/agent.ts`); the simpler `askAssistant()` chat helper still exists but is only used by the in-app benchmark.
 
 1. **Route:** your question goes to the model with a grammar-constrained JSON schema — it must pick one of four actions: `translate`, `scan_image` (when a photo is attached), `phrasebook`, or `answer`. The grammar makes malformed output *impossible*.
 2. **Dispatch:** the chosen tool runs deterministically in app code — the real translator, the real OCR pipeline, or a semantic search over the built-in phrasebook.

@@ -16,7 +16,7 @@ import {
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
 } from 'expo-audio';
-import { getLanguage, type Language } from '../data/languages';
+import { ALL_LANGUAGES, getLanguage, type Language } from '../data/languages';
 import { translateText } from '../qvac/translate';
 import { transcribeAudio } from '../qvac/transcribe';
 import { isSpeaking, isTtsLanguage, speak, stopSpeaking } from '../qvac/tts';
@@ -214,7 +214,7 @@ export function TranslateScreen() {
       <View style={styles.header}>
         <View style={styles.headerText}>
           <Text style={styles.title}>Translate</Text>
-          <Text style={styles.subtitle}>Offline · on-device · 48 languages</Text>
+          <Text style={styles.subtitle}>Offline · on-device · {ALL_LANGUAGES.length} languages</Text>
         </View>
         <TouchableOpacity
           style={styles.gear}

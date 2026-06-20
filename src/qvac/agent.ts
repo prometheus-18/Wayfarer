@@ -15,7 +15,7 @@ import { ensureAssistantModel, type ProgressListener } from './ModelManager';
 import { toModelPath } from './image';
 import { scanImage } from './ocr';
 import { enqueue } from './queue';
-import { searchPhrases } from './rag';
+import { releasePhrasebook, searchPhrases } from './rag';
 import { ASSISTANT_SYSTEM_PROMPT, LIMITS, sanitizeText } from './security';
 import { logEvent } from './telemetry';
 import { translateText } from './translate';
@@ -209,6 +209,14 @@ export async function runAgent(req: AgentRequest): Promise<{ reply: string; trac
       toolResult = `Tool "${decision.tool}" failed: ${message}`;
       record({ tool: decision.tool, summary: clip(`failed: ${message}`), ms: Date.now() - startedAt }, JSON.stringify(decision.args));
     }
+  }
+
+  // The phrasebook tool loaded the ~278 MB embedding model; with the 900 MB VLM
+  // already resident, free it now. The COMPOSE re-ensure below hits the model
+  // cache and would otherwise skip the usual RAM eviction, leaving both models
+  // in worker memory at once — a known OOM trigger on the 8 GB demo phone.
+  if (decision.tool === 'phrasebook') {
+    await releasePhrasebook();
   }
 
   // Phase 3 — COMPOSE the reply, streaming. Re-ensure the model: a scan_image

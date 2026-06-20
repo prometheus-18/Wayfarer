@@ -270,6 +270,25 @@ export function ensureEmbeddingModel(onProgress?: ProgressListener): Promise<str
   );
 }
 
+/**
+ * Free just the RAG embedding model. The embedding group isn't "heavy" (so a
+ * plain phrasebook search never evicts the VLM), but after an agent phrasebook
+ * turn the ~278 MB embedder would otherwise sit in worker RAM alongside the
+ * resident 900 MB VLM — call this between the phrasebook dispatch and compose
+ * so we stay within the one-big-model budget. Best-effort; never throws.
+ */
+export async function unloadEmbeddingModel(): Promise<void> {
+  const model = loaded.get('embed:gemma-300m');
+  if (!model) return;
+  try {
+    await unloadModel({ modelId: model.modelId });
+  } catch {
+    // Best-effort: drop our reference regardless.
+  }
+  loaded.delete('embed:gemma-300m');
+  logEvent({ kind: 'model_unload', model: 'embed:gemma-300m', extra: { reason: 'free_ram_for_assistant' } });
+}
+
 export const ModelStatus = {
   isTranslationLoaded: (from: string, to: string) => isLoaded(`nmt:${from}-${to}`),
   isOcrLoaded: () => isLoaded('ocr:latin'),

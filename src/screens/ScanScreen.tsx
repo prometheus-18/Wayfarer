@@ -74,6 +74,7 @@ export function ScanScreen() {
   };
 
   const pickFromCamera = async () => {
+    if (busy) return;
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Camera needed', 'Enable camera access to scan text.');
@@ -84,6 +85,7 @@ export function ScanScreen() {
   };
 
   const pickFromLibrary = async () => {
+    if (busy) return;
     const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
     if (!result.canceled && result.assets[0]) handleImage(result.assets[0].uri);
   };
@@ -143,6 +145,7 @@ export function ScanScreen() {
             label="Take photo"
             icon="📸"
             accent={ACCENT}
+            disabled={!!busy}
             onPress={pickFromCamera}
             style={styles.actionBtn}
           />
@@ -151,6 +154,7 @@ export function ScanScreen() {
             icon="🖼️"
             variant="tonal"
             accent={ACCENT}
+            disabled={!!busy}
             onPress={pickFromLibrary}
             style={styles.actionBtn}
           />
@@ -290,10 +294,4 @@ const styles = StyleSheet.create({
   output: { ...typography.title, fontWeight: '600', color: colors.text, lineHeight: 28 },
   speak: { alignSelf: 'flex-start', marginTop: spacing.sm },
   speakText: { ...typography.caption, color: ACCENT, fontWeight: '800' },
-  privacyNote: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
 });

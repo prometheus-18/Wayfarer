@@ -8,7 +8,7 @@ A short tour of how Wayfarer is put together and how it uses the QVAC SDK.
 UI (screens)  →  service layer (src/qvac)  →  @qvac/sdk  →  Bare worker (native inference)
 ```
 
-1. **Screens** (`src/screens/*`) own UI state only. They call three async helpers and render the results (with streaming).
+1. **Screens** (`src/screens/*`) own UI state only. They call the app-level async helpers (`translateText()`, `scanImage()`, `runAgent()`, `transcribeAudio()`, …) and render the results (with streaming). The live **AssistantScreen** calls `runAgent()` — the grammar-constrained tool-calling agent — not `askAssistant()` (which remains only as the benchmark/simple-chat helper).
 2. **Service layer** (`src/qvac/*`) is the *only* code that imports `@qvac/sdk`. It owns model selection, loading, RAM management, and turns SDK primitives into app-friendly functions.
 3. **`@qvac/sdk`** runs on the React Native JS side as a thin client and forwards work over RPC to…
 4. **`react-native-bare-kit`**, which hosts a Bare worker bundling the native C++ engines (llama.cpp, Bergamot NMT, ONNX Runtime). This is where inference actually happens. The `@qvac/sdk/expo-plugin` generates this worker bundle during `expo prebuild`.
@@ -31,7 +31,9 @@ Mobile RAM is the key constraint, so the manager:
 | `speak()` | `loadModel({ modelType: "tts-ggml", modelConfig: { ttsEngine: "supertonic", language } })` → `textToSpeech()` → WAV → expo-audio | `TTS_EN_SUPERTONIC_Q4_0`, `TTS_MULTILINGUAL_SUPERTONIC2_Q4_0` |
 | `scanImage()` | `loadModel({ modelType: "onnx-ocr", modelConfig: { detectorModelSrc } })` → `ocr()` | `OCR_LATIN_RECOGNIZER_1`, `OCR_CRAFT_DETECTOR` |
 | `askAssistant()` | `loadModel({ modelConfig: { projectionModelSrc } })` → `completion()` | `SMOLVLM2_500M_MULTIMODAL_Q8_0`, `MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0` |
-| `runAgent()` | `completion({ responseFormat: { type: "json_schema" } })` route → dispatch tools → `completion()` compose | same VLM (router + composer) |
+| `runAgent()` *(live Assistant)* | `completion({ responseFormat: { type: "json_schema" } })` route → dispatch tools → `completion()` compose | same VLM (router + composer) |
+
+> The live **AssistantScreen** uses `runAgent()` (tool-calling agent). `askAssistant()` is the simpler single-shot chat helper, retained only for the in-app benchmark.
 | `searchPhrases()` | `loadModel({ modelType: "llamacpp-embedding" })` → `ragIngest()` / `ragSearch()` | `EMBEDDINGGEMMA_300M_Q4_0` |
 
 ### Request serialization

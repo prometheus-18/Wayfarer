@@ -116,6 +116,7 @@ export function AssistantScreen() {
   };
 
   const showEmptyState = messages.length === 0;
+  const canSend = (input.trim().length > 0 || attached !== null) && !sending;
 
   return (
     <View style={styles.container}>
@@ -192,9 +193,9 @@ export function AssistantScreen() {
             multiline
           />
           <TouchableOpacity
-            style={[styles.sendButton, { backgroundColor: ACCENT }, sending && styles.sendDisabled]}
+            style={[styles.sendButton, { backgroundColor: ACCENT }, !canSend && styles.sendDisabled]}
             onPress={() => send()}
-            disabled={sending}
+            disabled={!canSend}
           >
             <Text style={styles.sendText}>{sending ? '…' : '➤'}</Text>
           </TouchableOpacity>

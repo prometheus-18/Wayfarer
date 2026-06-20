@@ -1,5 +1,7 @@
 # Wayfarer — Day 1 wrap-up & next steps
 
+> ✅ **RESOLVED (2026-06-20).** The bugs listed below were fixed in subsequent commits (force-CPU model loads, fire-and-forget telemetry, hop/OCR timeouts, en/es voice restriction, zero-popup Translate). This file is kept as a historical dev-log only; the app's three core features are working. Do not read the items below as current status.
+
 _Last updated: 2026-06-09._
 
 ## ✅ Where we are
@@ -9,7 +11,7 @@ _Last updated: 2026-06-09._
 - Debug build → `BUILD SUCCESSFUL`. Standalone **release APK** also builds and was installed on the phone over Wi-Fi.
 - All three screens (Translate / Scan / Assistant), the QVAC service layer, security hardening, audit log, and submission docs are committed on `main`.
 
-## 🐞 Known bugs (found in first on-device test) — fix tomorrow
+## 🐞 Known bugs (RESOLVED — historical) (found in first on-device test) — fix tomorrow
 
 > We don't have the exact error text yet. **First task tomorrow: reproduce each bug and capture the on-screen error Alert (screenshot) + export the in-app audit log** (tap the "100% offline" footer → Export log). That gives us the real failure messages to work from, since the release APK has no Metro red-box.
 

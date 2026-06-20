@@ -13,26 +13,17 @@
  */
 import { Asset } from 'expo-asset';
 import * as Device from 'expo-device';
-import {
-  loadModel,
-  unloadModel,
-  EMBEDDINGGEMMA_300M_Q4_0,
-  QWEN3_600M_INST_Q4,
-  type LoadModelOptions,
-} from '@qvac/sdk';
-import { textToSpeech as qvacTextToSpeech } from '@qvac/sdk';
 import { translateText } from './translate';
 import { scanImage } from './ocr';
 import { askAssistant } from './assistant';
 import { runAgent } from './agent';
 import { searchPhrases } from './rag';
 import { speak } from './tts';
-import { ensureTtsModel } from './ModelManager';
 import { LIMITS } from './security';
 import { logEvent } from './telemetry';
 import type { ProgressListener } from './ModelManager';
 
-export type StressGroup = 'translate' | 'ocr' | 'assistant' | 'probe';
+export type StressGroup = 'translate' | 'ocr' | 'assistant' | 'voice';
 export type CaseStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip';
 
 export interface CaseResult {
@@ -329,83 +320,9 @@ const CASES: CaseDef[] = [
     },
   },
   {
-    id: 'p-embed',
-    title: 'Capability probe: embeddings addon (EmbeddingGemma)',
-    group: 'probe',
-    run: async (ctx) => {
-      const modelId = await within(
-        300_000,
-        'embedding model load',
-        loadModel({
-          modelSrc: EMBEDDINGGEMMA_300M_Q4_0,
-          modelType: 'llamacpp-embedding',
-          modelConfig: {},
-          onProgress: ctx.onProgress,
-        } as unknown as LoadModelOptions),
-      );
-      await unloadModel({ modelId });
-      return 'llamacpp-embedding addon loads';
-    },
-  },
-  {
-    id: 'p-qwen',
-    title: 'Capability probe: Qwen3-600M instruct (tool-calling base)',
-    group: 'probe',
-    run: async (ctx) => {
-      const modelId = await within(
-        300_000,
-        'qwen3 model load',
-        loadModel({
-          modelSrc: QWEN3_600M_INST_Q4,
-          modelType: 'llamacpp-completion',
-          modelConfig: { ctx_size: 2048, device: 'cpu', gpu_layers: 0 },
-          onProgress: ctx.onProgress,
-        } as unknown as LoadModelOptions),
-      );
-      await unloadModel({ modelId });
-      return 'qwen3-600m loads';
-    },
-  },
-  {
-    id: 'p-tts-langs',
-    title: 'Probe: which languages Supertonic actually speaks',
-    group: 'probe',
-    run: async (ctx) => {
-      // Deliberately probes codes beyond the supported TtsLanguage union to
-      // re-verify what the native engine actually accepts; cast is intentional.
-      const candidates: { code: string; sample: string }[] = [
-        { code: 'en', sample: 'Hello, this is a test.' },
-        { code: 'es', sample: 'Hola, esto es una prueba.' },
-        { code: 'de', sample: 'Hallo, das ist ein Test.' },
-        { code: 'it', sample: 'Ciao, questo è un test.' },
-      ];
-      const works: string[] = [];
-      const fails: string[] = [];
-      for (const c of candidates) {
-        try {
-          const modelId = await within(
-            120_000,
-            `tts load ${c.code}`,
-            ensureTtsModel(c.code as 'en', ctx.onProgress),
-          );
-          const samples = await within(
-            60_000,
-            `synth ${c.code}`,
-            qvacTextToSpeech({ modelId, text: c.sample, inputType: 'text', stream: false }).buffer,
-          );
-          if (samples.length > 0) works.push(c.code);
-          else fails.push(`${c.code}(empty)`);
-        } catch (error) {
-          fails.push(`${c.code}(${String((error as Error)?.message ?? error).slice(0, 40)})`);
-        }
-      }
-      return `SPEAKS: [${works.join(',')}] · FAILS: [${fails.join(' | ')}]`;
-    },
-  },
-  {
     id: 'f-tts',
     title: 'Feature: speak a translation aloud (Supertonic)',
-    group: 'probe',
+    group: 'voice',
     run: async (ctx) => {
       const startedAt = Date.now();
       await within(300_000, 'tts speak', speak('Welcome to Wayfarer. Your translation is ready.', 'en', ctx.onProgress));
@@ -415,7 +332,7 @@ const CASES: CaseDef[] = [
   {
     id: 'f-rag',
     title: 'Feature: RAG phrasebook search (EmbeddingGemma)',
-    group: 'probe',
+    group: 'voice',
     run: async (ctx) => {
       const hits = await within(
         420_000,
